@@ -1,0 +1,21 @@
+{
+  "c_file": "example_gen.c", 
+  "positional": [
+    {
+      "c_var": "np_arg",
+      "c_type": "int"
+    }
+  ],
+  "non_positional": [
+    {
+      "name": "int_arg",
+      "c_var": "int_arg",
+      "c_type": "int"
+    } , 
+    {
+      "name": "char_arg":,
+      "c_var": "char_arg", 
+      "c_type": "char"
+    }
+  ]
+}
