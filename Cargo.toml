@@ -1,0 +1,9 @@
+[package]
+name = "argen"
+version = "0.1.0"
+authors = ["Matt Lee <matt@kynelee.com>", "Lucas Morales <lucas@lucasem.com>"]
+
+[dependencies]
+serde = "0.9"
+serde_derive = "0.9"
+serde_json = "0.9"
