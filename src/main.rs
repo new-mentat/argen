@@ -1,17 +1,24 @@
 #[macro_use]
 extern crate serde_derive;
 
-mod args;
 mod codegen;
 
 use std::env;
-use codegen::CodeGen;
+use std::fs::File;
+use std::path::Path;
+use codegen::Spec;
+
+
+pub fn parse_input(filename: &str) -> Spec {
+    let path = Path::new(filename);
+    let f = File::open(&path).expect("open input json");
+    Spec::from_reader(f)
+}
 
 fn main() {
     let filename = env::args()
         .nth(1)
         .unwrap_or(String::from("specs.json"));
     let s = args::parse_json(&filename);
-    let cg = CodeGen::new(s);
-    println!("{}", cg.gen());
+    println!("{}", s.gen());
 }
