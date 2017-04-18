@@ -15,8 +15,8 @@ struct NPItem {
     short: Option<String>,
     aliases: Option<Vec<String>>,
     help: Option<String>,
-    required: String,
-    default: u8,
+    required: Option<bool>,
+    default: Option<String>,
 }
 
 impl NPItem {
