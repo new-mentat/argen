@@ -25,6 +25,12 @@ struct NPItem {
 }
 
 impl NPItem {
+    /// generate approriate variable declarations for this argument, to be contained 
+    /// in the main function.
+    fn decl(&self) -> String {
+    }
+
+
     /// generate appropriate C code for the particular argument, to be contained within the primary
     /// argument loop. Assume that c_var is an initially-null pointer to a c_type, and
     /// c_var+"__isset" is a boolean. This function should make c_var non-null if applicable, and
@@ -36,6 +42,7 @@ impl NPItem {
             "char"  => code.push_str(format!("\t\t*{} = argv[i+1][0];\n\t\t})", c_var)), 
         }
         code.push_str(format!("\t\t bool {}__isset == true;\n\t}\n", c_var));
+        code.push_str(format!("\t\t arg_count += 1;\n\t}\n", c_var));
         code
     }
     /// generate appropriate C code for after the the primary argument loop. This should check the
@@ -55,6 +62,20 @@ impl NPItem {
             }
         }
         code  
+    }
+}
+
+
+impl PItem {
+    /// generate approriate variable declarations for this argument, to be contained 
+    /// in the main function.
+    fn decl(&self) -> String {
+    }
+    
+    fn gen(&self) -> String {
+    }
+
+    fn post_loop(&self) -> String{
     }
 }
 
@@ -110,14 +131,32 @@ impl Spec {
             body.push_str(format!("bool {}__isset;\n", npi.c_var));
         }
 
-        // primary loop
+        // push arg_count variable, which will be used for positional arguments
+        body.push_str("int arg_count = 0\n"); 
+
+        // primary loop npitem
         body.push_str("for (int i = 1; i < argc; i++) {");
+
+        // TODO: Add condition for checking whether we have gotten past all positional arguments
         for npi in &self.non_positional {
             body.push_str(npi.gen());
+        }
+        // post_loop
+        body.push('}');
+
+        // primary loop for pitem 
+        body.push_str("for (int i = arg_count; i < argc; i++) {");
+        for pi in &self.positional {
+            body.push_str(pi.gen());
         }
 
         // post_loop
         body.push('}');
+        
+        for pi in &self.positional {
+            body.push_str(pi.post_loop()); // TODO: Pass relative position index into pi.post_loop
+        }
+
         for npi in &self.non_positional {
             body.push_str(npi.post_loop());
         }
@@ -129,6 +168,7 @@ impl Spec {
         let decl = self.func_decl();
         let body = self.body();
         format!("{}{}}}", decl, body)
+        // TODO: ADd Main function 
     }
     /// writes generate C code to a writer.
     pub fn writeout<W>(&self, wrt: W)
