@@ -3,7 +3,7 @@ extern crate serde_json;
 
 use std::io::{Read, Write};
 
-static PERMITTED_C_TYPES: [&'static str; 2] = ["char*", "int32"] // TODO: support more types
+static PERMITTED_C_TYPES: [&'static str; 2] = ["char*", "int32"]; // TODO: support more types
 
 #[derive(Deserialize)]
 struct PItem {
@@ -30,12 +30,31 @@ impl NPItem {
     /// c_var+"__isset" is a boolean. This function should make c_var non-null if applicable, and
     /// if so it sohuld set c_var+"__isset" to true.
     fn gen(&self) -> String {
+        let mut code = String::from(format!("\tif(!strcomp(argv[i], {}) && i != argc -1){\n\t{}__isset = true;\n", c_var, c_var));
+        match self.c_type{ // TODO; Strings, int arrays, string array 
+            "int32" => code.push_str(format!("\t\t*{} = atoi(argv[i+1]);\n\t\t}", c_var)), 
+            "char"  => code.push_str(format!("\t\t*{} = argv[i+1][0];\n\t\t})", c_var)), 
+        }
+        code.push_str(format!("\t\t bool {}__isset == true;\n\t}\n", c_var));
+        code
     }
     /// generate appropriate C code for after the the primary argument loop. This should check the
     /// c_var+"__isset" value, and if it is false it should either cause the C program to fail with
     /// the help menu or it should assign a default value for c_var. After this is called, if the
     /// program is still running, then c_var MUST be set appropriately.
     fn post_loop(&self) -> String {
+        let mut code = String::from(format!("\tif({}__isset = false){\n", c_var));
+        if self.default != None {
+            match self.c_type {
+                "int32" => code.push_str(format!("\t\t*{} = {};\n\t\t}\n}", default)), 
+                "char"  => code.push_str(format!("\t\t*{} = {};\n\t\t}\n}", default)), 
+            }
+        } else {
+            if self.required == true {
+                // Error, or exit  
+            }
+        }
+        code  
     }
 }
 
@@ -80,6 +99,7 @@ impl Spec {
     /// ending in a `{`.
     fn func_decl(&self) -> String {
         String::from("void populate_args(int argc, char ** argv) {")
+
     }
     /// creates the body of the argen function.
     fn body(&self) -> String {
