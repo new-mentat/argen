@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate serde_derive;
+extern crate serde_json;
+extern crate regex;
 
 mod codegen;
 
@@ -19,6 +21,6 @@ fn main() {
     let filename = env::args()
         .nth(1)
         .unwrap_or(String::from("specs.json"));
-    let s = args::parse_json(&filename);
+    let s = parse_input(&filename);
     println!("{}", s.gen());
 }

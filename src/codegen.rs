@@ -2,6 +2,7 @@ extern crate regex;
 extern crate serde_json;
 
 use std::io::{Read, Write};
+use regex::Regex;
 
 static PERMITTED_C_TYPES: [&'static str; 2] = ["char*", "int32"]; // TODO: support more types
 
@@ -25,9 +26,10 @@ struct NPItem {
 }
 
 impl NPItem {
-    /// generate approriate variable declarations for this argument, to be contained 
+    /// generate approriate variable declarations for this argument, to be contained
     /// in the main function.
     fn decl(&self) -> String {
+        String::new()
     }
 
 
@@ -36,13 +38,16 @@ impl NPItem {
     /// c_var+"__isset" is a boolean. This function should make c_var non-null if applicable, and
     /// if so it sohuld set c_var+"__isset" to true.
     fn gen(&self) -> String {
-        let mut code = String::from(format!("\tif(!strcomp(argv[i], {}) && i != argc -1){\n\t{}__isset = true;\n", c_var, c_var));
-        match self.c_type{ // TODO; Strings, int arrays, string array 
-            "int32" => code.push_str(format!("\t\t*{} = atoi(argv[i+1]);\n\t\t}", c_var)), 
-            "char"  => code.push_str(format!("\t\t*{} = argv[i+1][0];\n\t\t})", c_var)), 
+        let mut code = String::new();
+        code.push_str(&format!("\t\tif (!strcmp(argv[i], \"--{}\")) {{\n", self.name));
+        match &*self.c_type { // TODO; Strings, int arrays, string array
+            "int32" => code.push_str(&format!("\t\t\t*{} = atoi(argv[i+1]);\n", self.c_var)),
+            "char*" => code.push_str(&format!("\t\t\t*{} = argv[i+1][0];\n", self.c_var)),
+            _ => ()/* impossible (due to sanity check) */,
         }
-        code.push_str(format!("\t\t bool {}__isset == true;\n\t}\n", c_var));
-        code.push_str(format!("\t\t arg_count += 1;\n\t}\n", c_var));
+        code.push_str(&format!("\t\t\t{}__isset = true;\n", self.c_var));
+        code.push_str("\t\t\targ_count++;\n");
+        code.push_str("\t\t}\n");
         code
     }
     /// generate appropriate C code for after the the primary argument loop. This should check the
@@ -50,32 +55,34 @@ impl NPItem {
     /// the help menu or it should assign a default value for c_var. After this is called, if the
     /// program is still running, then c_var MUST be set appropriately.
     fn post_loop(&self) -> String {
-        let mut code = String::from(format!("\tif({}__isset = false){\n", c_var));
-        if self.default != None {
-            match self.c_type {
-                "int32" => code.push_str(format!("\t\t*{} = {};\n\t\t}\n}", default)), 
-                "char"  => code.push_str(format!("\t\t*{} = {};\n\t\t}\n}", default)), 
-            }
+        let mut code = String::new();
+        code.push_str(&format!("\tif (!{}__isset) {{\n", self.c_var));
+        if let Some(ref default) = self.default {
+            code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default));
         } else {
-            if self.required == true {
-                // Error, or exit  
+            if self.required.unwrap_or(false) {
+                // Error, or exit
             }
         }
-        code  
+        code.push_str("\t}\n");
+        code
     }
 }
 
 
 impl PItem {
-    /// generate approriate variable declarations for this argument, to be contained 
+    /// generate approriate variable declarations for this argument, to be contained
     /// in the main function.
     fn decl(&self) -> String {
+        String::new()
     }
-    
+
     fn gen(&self) -> String {
+        String::new()
     }
 
     fn post_loop(&self) -> String{
+        String::new()
     }
 }
 
@@ -89,29 +96,29 @@ impl Spec {
     /// deserializes json from a reader into a Spec.
     pub fn from_reader<R>(rdr: R) -> Spec
     where R: Read {
-        let s = serde_json::from_reader(rdr).expect("parse json argument spec");
+        let s: Spec = serde_json::from_reader(rdr).expect("parse json argument spec");
         s.sanity_check(); // panic if nonsense input
         s
     }
     /// check all items in the spec to make sure they are valid.
     fn sanity_check(&self) {
-        let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*(?:__isset)$").unwrap();
+        let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
         for pi in &self.positional {
-            assert!(identifier_re.is_match(pi.c_var), format!("invalid c variable \"{}\"", pi.c_var));
-            let valid_type = (&PERMITTED_C_TYPES).into_iter().any(|tp| tp == pi.c_type);
+            assert!(identifier_re.is_match(&pi.c_var), format!("invalid c variable \"{}\"", pi.c_var));
+            let valid_type = (&PERMITTED_C_TYPES).into_iter().any(|&tp| tp == pi.c_type);
             assert!(valid_type, format!("invalid c type: \"{}\"", pi.c_type));
         }
         for pi in &self.non_positional {
-            assert!(identifier_re.is_match(pi.c_var), format!("invalid c variable \"{}\"", pi.c_var));
-            let valid_type = (&PERMITTED_C_TYPES).into_iter().any(|tp| tp == pi.c_type);
+            assert!(identifier_re.is_match(&pi.c_var), format!("invalid c variable \"{}\"", pi.c_var));
+            let valid_type = (&PERMITTED_C_TYPES).into_iter().any(|&tp| tp == pi.c_type);
             assert!(valid_type, format!("invalid c type: \"{}\"", pi.c_type));
             assert!(pi.name.find(' ').is_none(), "invalid argument name: \"{}\"", pi.name);
-            if let Some(short_name) = pi.short {
-                assert!(pi.name.len() == 1, "invalid short name: \"{}\"", pi.name);
+            if let Some(ref short_name) = pi.short {
+                assert!(short_name.len() == 1, "invalid short name: \"{}\"", short_name);
             }
-            if let Some(aliases) = pi.aliases {
-                for alias in &aliases {
-                    assert!(pi.name.find(' ').is_none(), "invalid argument alias name: \"{}\"", pi.name);
+            if let Some(ref aliases) = pi.aliases {
+                for alias in aliases {
+                    assert!(alias.find(' ').is_none(), "invalid argument alias name: \"{}\"", alias);
                 }
             }
         }
@@ -119,7 +126,7 @@ impl Spec {
     /// creates the C function declaration of an argen function,
     /// ending in a `{`.
     fn func_decl(&self) -> String {
-        String::from("void populate_args(int argc, char ** argv) {")
+        String::from("void populate_args(int argc, char ** argv /* TODO */) {\n")
 
     }
     /// creates the body of the argen function.
@@ -128,37 +135,35 @@ impl Spec {
 
         // create c_var+"_isset" booleans
         for npi in &self.non_positional {
-            body.push_str(format!("bool {}__isset;\n", npi.c_var));
+            body.push_str(&format!("\tbool {}__isset = false;\n", npi.c_var));
         }
 
         // push arg_count variable, which will be used for positional arguments
-        body.push_str("int arg_count = 0\n"); 
+        body.push_str("\tint arg_count = 0\n");
 
         // primary loop npitem
-        body.push_str("for (int i = 1; i < argc; i++) {");
+        body.push_str("\tfor (int i = 1; i < argc; i++) {\n");
 
         // TODO: Add condition for checking whether we have gotten past all positional arguments
         for npi in &self.non_positional {
-            body.push_str(npi.gen());
+            body.push_str(&npi.gen());
         }
-        // post_loop
-        body.push('}');
+        body.push_str("\t}\n");
 
-        // primary loop for pitem 
-        body.push_str("for (int i = arg_count; i < argc; i++) {");
+        // primary loop for pitem
+        body.push_str("\tfor (int i = arg_count; i < argc; i++) {\n");
         for pi in &self.positional {
-            body.push_str(pi.gen());
+            body.push_str(&pi.gen());
         }
+        body.push_str("\t}\n");
 
         // post_loop
-        body.push('}');
-        
         for pi in &self.positional {
-            body.push_str(pi.post_loop()); // TODO: Pass relative position index into pi.post_loop
+            body.push_str(&pi.post_loop()); // TODO: Pass relative position index into pi.post_loop
         }
 
         for npi in &self.non_positional {
-            body.push_str(npi.post_loop());
+            body.push_str(&npi.post_loop());
         }
 
         body
@@ -168,11 +173,11 @@ impl Spec {
         let decl = self.func_decl();
         let body = self.body();
         format!("{}{}}}", decl, body)
-        // TODO: ADd Main function 
+        // TODO: Add Main function
     }
     /// writes generate C code to a writer.
-    pub fn writeout<W>(&self, wrt: W)
+    pub fn writeout<W>(&self, wrt: &mut W)
     where W: Write {
-        w.write_all(self.gen().as_bytes()).expect("write generated code to file")
+        wrt.write_all(self.gen().as_bytes()).expect("write generated code to file")
     }
 }

@@ -1,25 +1,25 @@
 {
-  "c_file": "file_name", 
+  "c_file": "file_name",
   "positional": [
     {
       "c_var": "out_file",
       "c_type": "char*",
       "help": "the output file"
     },{
-      "c_var": "in_files", 
-      "c_type": "char**"
+      "c_var": "in_file",
+      "c_type": "char*"
     }
   ],
   "non_positional": [
     {
-      "name": "block_size",  
-      "short": "b",         
-      "aliases": ["bs"],   
-      "c_type": "int",       
-      "c_var": "np example cvar",
-      "help": "this is help text for block_size", 
-      "required": "true", 
-      "default": 12 
-    } 
+      "name": "block-size",
+      "short": "b",
+      "aliases": ["bs"],
+      "c_type": "int32",
+      "c_var": "block_size",
+      "help": "this is help text for block_size",
+      "required": "true",
+      "default": "12"
+    }
   ]
 }
