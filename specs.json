@@ -20,6 +20,13 @@
       "help": "this is help text for block_size",
       "required": "true",
       "default": "12"
+    },
+    {
+      "name": "name",
+      "short": "n",
+      "c_type": "char*",
+      "c_var": "username",
+      "default": "John Smith"
     }
   ]
 }

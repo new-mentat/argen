@@ -39,14 +39,17 @@ impl NPItem {
     /// if so it sohuld set c_var+"__isset" to true.
     fn gen(&self) -> String {
         let mut code = String::new();
-        code.push_str(&format!("\t\tif (!strcmp(argv[i], \"--{}\")) {{\n", self.name));
-        match &*self.c_type { // TODO; Strings, int arrays, string array
-            "int32" => code.push_str(&format!("\t\t\t*{} = atoi(argv[i+1]);\n", self.c_var)),
-            "char*" => code.push_str(&format!("\t\t\t*{} = argv[i+1][0];\n", self.c_var)),
+        // TODO: There's a special case for binary args like --verbose where there's no subsequent
+        // arg. Also, we should add support for --foo=bar on top of just --foo bar
+        code.push_str(&format!("\t\tif (!strcmp(argv[i], \"--{}\") && i+1<argc) {{\n", self.name));
+        match &*self.c_type { // TODO: int arrays, string array
+            "int32" => code.push_str(&format!("\t\t\t*{} = atoi(argv[++i]);\n", self.c_var)),
+            "char*" => code.push_str(&format!("\t\t\t*{} = argv[++i];\n", self.c_var)),
+            "char"  => code.push_str(&format!("\t\t\t*{} = argv[++i][0];\n", self.c_var)),
             _ => ()/* impossible (due to sanity check) */,
         }
         code.push_str(&format!("\t\t\t{}__isset = true;\n", self.c_var));
-        code.push_str("\t\t\targ_count++;\n");
+        code.push_str("\t\t\targ_count += 2;\n");
         code.push_str("\t\t}\n");
         code
     }
@@ -57,12 +60,11 @@ impl NPItem {
     fn post_loop(&self) -> String {
         let mut code = String::new();
         code.push_str(&format!("\tif (!{}__isset) {{\n", self.c_var));
-        if let Some(ref default) = self.default {
+        if self.required.unwrap_or(false) {
+            // TODO: exit with help
+            code.push_str("\t\t//TODO: exit with help (required arg)\n")
+        } else if let Some(ref default) = self.default {
             code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default));
-        } else {
-            if self.required.unwrap_or(false) {
-                // Error, or exit
-            }
         }
         code.push_str("\t}\n");
         code
