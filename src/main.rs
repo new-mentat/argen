@@ -18,9 +18,7 @@ pub fn parse_input(filename: &str) -> Spec {
 }
 
 fn main() {
-    let filename = env::args()
-        .nth(1)
-        .unwrap_or(String::from("specs.json"));
+    let filename = env::args().nth(1).unwrap_or(String::from("specs.json"));
     let s = parse_input(&filename);
     println!("{}", s.gen());
 }

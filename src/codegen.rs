@@ -81,7 +81,7 @@ impl PItem {
         String::new()
     }
 
-    fn post_loop(&self) -> String{
+    fn post_loop(&self) -> String {
         String::new()
     }
 }
@@ -95,7 +95,8 @@ pub struct Spec {
 impl Spec {
     /// deserializes json from a reader into a Spec.
     pub fn from_reader<R>(rdr: R) -> Spec
-    where R: Read {
+        where R: Read
+    {
         let s: Spec = serde_json::from_reader(rdr).expect("parse json argument spec");
         s.sanity_check(); // panic if nonsense input
         s
@@ -104,21 +105,33 @@ impl Spec {
     fn sanity_check(&self) {
         let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
         for pi in &self.positional {
-            assert!(identifier_re.is_match(&pi.c_var), format!("invalid c variable \"{}\"", pi.c_var));
-            let valid_type = (&PERMITTED_C_TYPES).into_iter().any(|&tp| tp == pi.c_type);
+            assert!(identifier_re.is_match(&pi.c_var),
+                    format!("invalid c variable \"{}\"", pi.c_var));
+            let valid_type = (&PERMITTED_C_TYPES)
+                .into_iter()
+                .any(|&tp| tp == pi.c_type);
             assert!(valid_type, format!("invalid c type: \"{}\"", pi.c_type));
         }
         for pi in &self.non_positional {
-            assert!(identifier_re.is_match(&pi.c_var), format!("invalid c variable \"{}\"", pi.c_var));
-            let valid_type = (&PERMITTED_C_TYPES).into_iter().any(|&tp| tp == pi.c_type);
+            assert!(identifier_re.is_match(&pi.c_var),
+                    format!("invalid c variable \"{}\"", pi.c_var));
+            let valid_type = (&PERMITTED_C_TYPES)
+                .into_iter()
+                .any(|&tp| tp == pi.c_type);
             assert!(valid_type, format!("invalid c type: \"{}\"", pi.c_type));
-            assert!(pi.name.find(' ').is_none(), "invalid argument name: \"{}\"", pi.name);
+            assert!(pi.name.find(' ').is_none(),
+                    "invalid argument name: \"{}\"",
+                    pi.name);
             if let Some(ref short_name) = pi.short {
-                assert!(short_name.len() == 1, "invalid short name: \"{}\"", short_name);
+                assert!(short_name.len() == 1,
+                        "invalid short name: \"{}\"",
+                        short_name);
             }
             if let Some(ref aliases) = pi.aliases {
                 for alias in aliases {
-                    assert!(alias.find(' ').is_none(), "invalid argument alias name: \"{}\"", alias);
+                    assert!(alias.find(' ').is_none(),
+                            "invalid argument alias name: \"{}\"",
+                            alias);
                 }
             }
         }
@@ -177,7 +190,9 @@ impl Spec {
     }
     /// writes generate C code to a writer.
     pub fn writeout<W>(&self, wrt: &mut W)
-    where W: Write {
-        wrt.write_all(self.gen().as_bytes()).expect("write generated code to file")
+        where W: Write
+    {
+        wrt.write_all(self.gen().as_bytes())
+            .expect("write generated code to file")
     }
 }
