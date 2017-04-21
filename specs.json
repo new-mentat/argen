@@ -15,7 +15,7 @@
       "name": "block-size",
       "short": "b",
       "aliases": ["bs"],
-      "c_type": "int32",
+      "c_type": "int",
       "c_var": "block_size",
       "help": "this is help text for block_size",
       "required": "true",

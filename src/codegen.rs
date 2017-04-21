@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use regex::Regex;
 
 // TODO: support more types
-static PERMITTED_C_TYPES: [&'static str; 3] = ["char", "char*", "int32"];
+static PERMITTED_C_TYPES: [&'static str; 3] = ["char", "char*", "int"];
 
 #[derive(Deserialize)]
 struct PItem {
@@ -33,12 +33,12 @@ impl NPItem {
     }
     /// declarations for the parse_args (not main) function.
     fn decl_parse(&self) -> String {
-        format!("\tbool {}__isset = false;\n", self.c_var)
+        format!("\tint {}__isset = 0;\n", self.c_var)
     }
     /// generate appropriate C code for the particular argument, to be contained within the primary
     /// argument loop. Assume that c_var is an initially-null pointer to a c_type, and
-    /// c_var+"__isset" is a boolean. This function should make c_var non-null if applicable, and
-    /// if so it sohuld set c_var+"__isset" to true.
+    /// c_var+"__isset" is a boolean(int). This function should make c_var non-null if applicable,
+    /// and if so it should set c_var+"__isset" to true.
     fn gen(&self) -> String {
         let mut code = String::new();
         // TODO: There's a special case for binary args like --verbose where there's no subsequent
@@ -46,12 +46,12 @@ impl NPItem {
         code.push_str(&format!("\t\tif (!strcmp(argv[i], \"--{}\") && i+1<argc) {{\n",
                                self.name));
         match &*self.c_type { // TODO: int arrays, string array
-            "int32" => code.push_str(&format!("\t\t\t*{} = atoi(argv[++i]);\n", self.c_var)),
+            "int" => code.push_str(&format!("\t\t\t*{} = atoi(argv[++i]);\n", self.c_var)),
             "char*" => code.push_str(&format!("\t\t\t*{} = argv[++i];\n", self.c_var)),
             "char"  => code.push_str(&format!("\t\t\t*{} = argv[++i][0];\n", self.c_var)),
             _ => ()/* impossible (due to sanity check) */,
         }
-        code.push_str(&format!("\t\t\t{}__isset = true;\n", self.c_var));
+        code.push_str(&format!("\t\t\t{}__isset = 1;\n", self.c_var));
         code.push_str("\t\t\targ_count += 2;\n");
         code.push_str("\t\t}\n");
         code
@@ -68,7 +68,7 @@ impl NPItem {
             code.push_str("\t\texit(1);\n");
         } else if let Some(ref default) = self.default {
             match &*self.c_type {
-                "int32" => code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default)),
+                "int" => code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default)),
                 // TODO: handle quoting correctly for char* AND char
                 "char*" => code.push_str(&format!("\t\t*{} = \"{}\";\n", self.c_var, default)),
                 "char"  => code.push_str(&format!("\t\t*{} = '{}';\n", self.c_var, default)),
@@ -154,7 +154,7 @@ impl Spec {
     fn c_usage(&self) -> String {
         // TODO: positional usage. escape double quotes in help message.
         let positional_usage = "[TODO ...]";
-        let mut help = String::from("  -h  --help\n        print this usage and exit\n");
+        let mut help = String::from("\"  -h  --help\\n\"\n\"        print this usage and exit\\n\"\n");
         help.push_str(&self.non_positional
                            .iter()
                            .map(|ref npi| {
@@ -168,22 +168,22 @@ impl Spec {
             }
             let help = match npi.help {
                 Some(ref h) => {
-                    let mut hm = String::from("\n        ");
+                    let mut hm = String::from("\\n\"\n\"        ");
                     hm.push_str(h);
                     hm
                 }
                 _ => String::new(),
             };
             if let Some(ref short) = npi.short {
-                format!("  -{}{}{}\n", short, long, help)
+                format!("\"  -{}{}{}\\n\"\n", short, long, help)
             } else {
-                format!("     {}{}\n", long, help)
+                format!("\"     {}{}\\n\"\n", long, help)
             }
         })
                            .collect::<String>());
         format!(r#"static void usage(const char *progname) {{
-	printf("usage: %s [options] {}\n%s", progname, "\
-{}");
+	printf("usage: %s [options] {}\n%s", progname,
+{});
 }}
 "#,
                 positional_usage,
@@ -203,7 +203,7 @@ impl Spec {
 
         // TODO: if using glibc, use getopt.h to automate most of this
 
-        // create c_var+"_isset" booleans
+        // create c_var+"_isset" booleans(ints)
         for npi in &self.non_positional {
             body.push_str(&npi.decl_parse());
         }
