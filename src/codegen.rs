@@ -192,7 +192,14 @@ impl Spec {
     /// creates the parse_args function in C.
     fn c_parse_args(&self) -> String {
         let mut body = String::new();
-        body.push_str("void parse_args(int argc, char **argv /* TODO */) {\n");
+        body.push_str("void parse_args(int argc, char **argv");
+        for pi in &self.positional {
+            body.push_str(&format!(", {} *{}", pi.c_type, pi.c_var))
+        }
+        for npi in &self.non_positional {
+            body.push_str(&format!(", {} *{}", npi.c_type, npi.c_var))
+        }
+        body.push_str(") {\n");
 
         // TODO: if using glibc, use getopt.h to automate most of this
 
