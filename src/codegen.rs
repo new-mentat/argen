@@ -4,14 +4,21 @@ extern crate serde_json;
 use std::io::{Read, Write};
 use regex::Regex;
 
-// TODO: support more types
-static PERMITTED_C_TYPES: [&'static str; 3] = ["char", "char*", "int"];
+static PERMITTED_C_TYPES: [&'static str; 2] = ["char*", "int"];
+static INCLUDES: [&'static str; 4] = ["stdlib", "stdio", "string", "getopt"];
+
+/// c_quote takes a string and quotes it suitably for use in a char* literal in C.
+fn c_quote(i: &str) -> String {
+    i.replace("\"", "\\\"").replace("\n", "\\n")
+}
 
 #[derive(Deserialize)]
 struct PItem {
     c_var: String,
     c_type: String,
     help: Option<String>,
+    optional: Option<bool>, // cannot preceed a non-optional arg!
+    multi: Option<bool>, // only valid for last item!
 }
 
 #[derive(Deserialize)]
@@ -22,7 +29,8 @@ struct NPItem {
     short: Option<String>,
     aliases: Option<Vec<String>>,
     help: Option<String>,
-    required: Option<bool>,
+    required: Option<bool>, // if true, no_arg cannot also be set
+    no_arg: Option<bool>, // if true, c_var must be int, and is set to 1 when option is given
     default: Option<String>,
 }
 
@@ -33,33 +41,36 @@ impl NPItem {
     }
     /// declarations for the parse_args (not main) function.
     fn decl_parse(&self) -> String {
-        format!("\tint {}__isset = 0;\n", self.c_var)
+        match self.no_arg.unwrap_or(false) {
+            true => String::new(),
+            false => format!("\tint {}__isset = 0;\n", self.c_var),
+        }
     }
-    /// generate appropriate C code for the particular argument, to be contained within the primary
-    /// argument loop. Assume that c_var is an initially-null pointer to a c_type, and
-    /// c_var+"__isset" is a boolean(int). This function should make c_var non-null if applicable,
-    /// and if so it should set c_var+"__isset" to true.
-    fn gen(&self) -> String {
+    /// assigns value to the c_var in parse loop.
+    fn assign(&self) -> String {
         let mut code = String::new();
-        // TODO: There's a special case for binary args like --verbose where there's no subsequent
-        // arg. Also, we should add support for --foo=bar on top of just --foo bar
-        code.push_str(&format!("\t\tif (!strcmp(argv[i], \"--{}\") && i+1<argc) {{\n",
-                               self.name));
-        match &*self.c_type { // TODO: int arrays, string array
-            "int" => code.push_str(&format!("\t\t\t*{} = atoi(argv[++i]);\n", self.c_var)),
-            "char*" => code.push_str(&format!("\t\t\t*{} = argv[++i];\n", self.c_var)),
-            "char"  => code.push_str(&format!("\t\t\t*{} = argv[++i][0];\n", self.c_var)),
+        match &*self.c_type {
+            "int" => match self.no_arg.unwrap_or(false) {
+                true  => return format!("\t\t\t*{} = 1;\n", self.c_var),
+                false => code.push_str(&format!("\t\t\t*{} = atoi(optarg);\n", self.c_var)),
+            },
+            "char*" => code.push_str(&format!("\t\t\t*{} = optarg;\n", self.c_var)),
             _ => ()/* impossible (due to sanity check) */,
         }
         code.push_str(&format!("\t\t\t{}__isset = 1;\n", self.c_var));
-        code.push_str("\t\t\targ_count += 2;\n");
-        code.push_str("\t\t}\n");
         code
     }
-    /// generate appropriate C code for after the the primary argument loop. This should check the
-    /// c_var+"__isset" value, and if it is false it should either cause the C program to fail with
-    /// the help menu or it should assign a default value for c_var. After this is called, if the
-    /// program is still running, then c_var MUST be set appropriately.
+    /// long option as per getopt_long(3).
+    fn long_option(&self, uniq: u8) -> String {
+        format!("\t\t{{\"{}\", {}, 0, {}}},\n",
+                self.name,
+                match self.no_arg.unwrap_or(false) {
+                    true => "no_argument",
+                    false => "required_argument",
+                },
+                uniq)
+    }
+    /// performs checks and conditional assignments after the parse loop.
     fn post_loop(&self) -> String {
         let mut code = String::new();
         code.push_str(&format!("\tif (!{}__isset) {{\n", self.c_var));
@@ -69,11 +80,13 @@ impl NPItem {
         } else if let Some(ref default) = self.default {
             match &*self.c_type {
                 "int" => code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default)),
-                // TODO: handle quoting correctly for char* AND char
-                "char*" => code.push_str(&format!("\t\t*{} = \"{}\";\n", self.c_var, default)),
-                "char"  => code.push_str(&format!("\t\t*{} = '{}';\n", self.c_var, default)),
+                "char*" => code.push_str(&format!("\t\t*{} = \"{}\";\n",
+                                                  self.c_var,
+                                                  c_quote(default))),
                 _ => ()/* impossible */,
             }
+        } else {
+            return String::new();
         }
         code.push_str("\t}\n");
         code
@@ -83,11 +96,15 @@ impl NPItem {
 
 impl PItem {
     /// declarations for the main function.
-    fn decl(&self) -> String {
+    fn decl_main(&self) -> String {
         format!("\t{} {};\n", self.c_type, self.c_var)
     }
+    /// declarations for the parse function.
+    fn decl_parse(&self) -> String {
+        String::new()
+    }
 
-    fn gen(&self) -> String {
+    fn assign(&self) -> String {
         String::new()
     }
 
@@ -98,6 +115,7 @@ impl PItem {
 
 #[derive(Deserialize)]
 pub struct Spec {
+    /// positional must be ordered: required, then optional. only last can be multi.
     positional: Vec<PItem>,
     non_positional: Vec<NPItem>,
 }
@@ -132,6 +150,12 @@ impl Spec {
             assert!(pi.name.find(' ').is_none(),
                     "invalid argument name: \"{}\"",
                     pi.name);
+            if pi.no_arg.unwrap_or(false) {
+                assert!(pi.c_type == "int",
+                        "options that have no_arg set must be of c_type int");
+                assert!(!pi.required.unwrap_or(false),
+                        "options that have no_arg set cannot also be required");
+            }
             if let Some(ref short_name) = pi.short {
                 assert!(short_name.len() == 1,
                         "invalid short name: \"{}\"",
@@ -148,13 +172,17 @@ impl Spec {
     }
     /// creates the necessary headers in C.
     fn c_headers(&self) -> String {
-        String::from("#include<stdlib.h>\n#include<stdio.h>\n#include<string.h>")
+        INCLUDES
+            .iter()
+            .map(|s| format!("#include<{}.h>\n", s))
+            .collect()
     }
     /// creates the usage function in C.
     fn c_usage(&self) -> String {
-        // TODO: positional usage. escape double quotes in help message.
+        // TODO: positional usage
         let positional_usage = "[TODO ...]";
-        let mut help = String::from("\"  -h  --help\\n\"\n\"        print this usage and exit\\n\"\n");
+        let mut help = String::from("\t       \"  -h  --help\\n\"\n\
+                                    \t       \"        print this usage and exit\\n\"\n");
         help.push_str(&self.non_positional
                            .iter()
                            .map(|ref npi| {
@@ -168,24 +196,22 @@ impl Spec {
             }
             let help = match npi.help {
                 Some(ref h) => {
-                    let mut hm = String::from("\\n\"\n\"        ");
-                    hm.push_str(h);
+                    let mut hm = String::from("\\n\"\n\t       \"        ");
+                    hm.push_str(&c_quote(&h));
                     hm
                 }
                 _ => String::new(),
             };
             if let Some(ref short) = npi.short {
-                format!("\"  -{}{}{}\\n\"\n", short, long, help)
+                format!("\t       \"  -{}{}{}\\n\"\n", short, long, help)
             } else {
-                format!("\"     {}{}\\n\"\n", long, help)
+                format!("\t       \"     {}{}\\n\"\n", long, help)
             }
         })
                            .collect::<String>());
-        format!(r#"static void usage(const char *progname) {{
-	printf("usage: %s [options] {}\n%s", progname,
-{});
-}}
-"#,
+        format!("static void usage(const char *progname) {{\n\
+                \tprintf(\"usage: %s [options] {}\\n%s\", progname,\n\
+                {}\t       );\n}}\n",
                 positional_usage,
                 help)
     }
@@ -201,38 +227,80 @@ impl Spec {
         }
         body.push_str(") {\n");
 
-        // TODO: if using glibc, use getopt.h to automate most of this
-
-        // create c_var+"_isset" booleans(ints)
+        // decls, optional
         for npi in &self.non_positional {
             body.push_str(&npi.decl_parse());
         }
 
-        // push arg_count variable, which will be used for positional arguments
-        body.push_str("\tint arg_count = 0;\n");
-
-        // primary loop npitem
-        body.push_str("\tfor (int i = 1; i < argc; i++) {\n");
-
-        // TODO: Add condition for checking whether we have gotten past all positional arguments
-        for npi in &self.non_positional {
-            body.push_str(&npi.gen());
+        // longopts
+        let uniqs: Vec<u8> = self.non_positional
+            .iter()
+            .map(|npi| {
+                     if let Some(ref s) = npi.short {
+                         s.as_bytes()[0]
+                     } else {
+                         1 // TODO: stuff won't work if longopts don't have a shortname
+                     }
+                 })
+            .collect();
+        body.push_str("\tstatic struct option longopts[] = {\n");
+        for i in 0..self.non_positional.len() {
+            let npi = &self.non_positional[i];
+            body.push_str(&npi.long_option(uniqs[i]));
         }
-        body.push_str("\t}\n");
+        body.push_str("\t\t{\"help\", 0, 0, 'h'},\n");
+        body.push_str("\t\t{0, 0, 0, 0}\n\t};\n");
 
-        // primary loop for pitem
-        body.push_str("\tfor (int i = arg_count; i < argc; i++) {\n");
-        for pi in &self.positional {
-            body.push_str(&pi.gen());
-        }
-        body.push_str("\t}\n");
+        // shortopts
+        let mut optstring = String::from_utf8(self.non_positional
+                                                  .iter()
+                                                  .filter(|npi| npi.short.is_some())
+                                                  .flat_map(|npi| {
+            let s = npi.short.clone();
+            let mut v = Vec::new();
+            v.push(s.unwrap().as_bytes()[0]);
+            if !npi.no_arg.unwrap_or(false) {
+                v.push(b':');
+            }
+            v.into_iter().collect::<Vec<u8>>()
+        })
+                                                  .collect())
+                .unwrap();
+        optstring.push('h');
 
-        // post_loop
-        for pi in &self.positional {
-            body.push_str(&pi.post_loop()); // TODO: Pass relative position index into pi.post_loop
+        // parse loop, optional
+        body.push_str("\tint ch;\n\twhile ((ch = getopt_long(argc, argv, ");
+        body.push_str(&format!("\"{}\", longopts, NULL)) != -1) {{\n", optstring));
+        body.push_str("\t\tswitch (ch) {\n");
+        for i in 0..uniqs.len() {
+            body.push_str(&format!("\t\tcase {}:\n{}\t\t\tbreak;\n",
+                                   uniqs[i],
+                                   self.non_positional[i].assign()));
         }
+        body.push_str("\t\tcase 0:\n\t\t\tbreak;\n\
+                      \t\tcase 'h':\n\
+                      \t\tdefault:\n\t\t\tusage(argv[0]);\n\t\t\texit(1);\n\
+                      \t\t}\n\t}\n");
+
+        // post loop, optional
         for npi in &self.non_positional {
             body.push_str(&npi.post_loop());
+        }
+        body.push('\n');
+
+        // decls, positional
+        for pi in &self.positional {
+            body.push_str(&pi.decl_parse());
+        }
+
+        // parse loop, positional
+        body.push_str("\twhile (optind < argc) {\n");
+        body.push_str("\t\t/* TODO: positional loop */\n"); // TODO
+        body.push_str("\t\toptind++;\n\t}\n");
+
+        // post loop, positional
+        for pi in &self.positional {
+            body.push_str(&pi.post_loop());
         }
 
         body.push_str("}\n");
@@ -244,7 +312,7 @@ impl Spec {
         main.push_str("int main(int argc, char **argv) {\n");
 
         for pi in &self.positional {
-            main.push_str(&pi.decl())
+            main.push_str(&pi.decl_main())
         }
         for npi in &self.non_positional {
             main.push_str(&npi.decl_main())
@@ -263,14 +331,13 @@ impl Spec {
         main.push_str("}\n");
         main
     }
-    /// generates argen.c which features the function argen.
+    /// generates everything
     pub fn gen(&self) -> String {
         let h = self.c_headers();
         let usage = self.c_usage();
         let body = self.c_parse_args();
         let main = self.c_main();
         format!("{}\n\n{}\n{}\n{}", h, usage, body, main)
-        // TODO: Add Main function
     }
     /// writes generate C code to a writer.
     pub fn writeout<W>(&self, wrt: &mut W)

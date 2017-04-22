@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Matt Lee <matt@kynelee.com>", "Lucas Morales <lucas@lucasem.com>"]
 
 [dependencies]
+getopts = "0.2"
 regex = "0.2"
 serde = "0.9"
 serde_derive = "0.9"
