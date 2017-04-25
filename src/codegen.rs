@@ -16,16 +16,18 @@ fn c_quote(i: &str) -> String {
 struct PItem {
     c_var: String,
     c_type: String,
+    help_item: String,
     help: Option<String>,
-    optional: Option<bool>, // cannot preceed a non-optional arg!
-    multi: Option<bool>, // only valid for last item!
+    optional: Option<bool>, // cannot preceed a non-optional arg
+    default: Option<String>, // only valid if optional
+    multi: Option<bool>, // only valid for last item TODO: actually implement
 }
 
 #[derive(Deserialize)]
 struct NPItem {
     c_var: String,
     c_type: String,
-    name: String,
+    long: String,
     short: Option<String>,
     aliases: Option<Vec<String>>,
     help: Option<String>,
@@ -57,13 +59,16 @@ impl NPItem {
             "char*" => code.push_str(&format!("\t\t\t*{} = optarg;\n", self.c_var)),
             _ => ()/* impossible (due to sanity check) */,
         }
-        code.push_str(&format!("\t\t\t{}__isset = 1;\n", self.c_var));
+        match self.no_arg.unwrap_or(false) {
+            false => code.push_str(&format!("\t\t\t{}__isset = 1;\n", self.c_var)),
+            _ => (),
+        }
         code
     }
     /// long option as per getopt_long(3).
     fn long_option(&self, uniq: u8) -> String {
         format!("\t\t{{\"{}\", {}, 0, {}}},\n",
-                self.name,
+                self.long,
                 match self.no_arg.unwrap_or(false) {
                     true => "no_argument",
                     false => "required_argument",
@@ -79,7 +84,7 @@ impl NPItem {
             code.push_str("\t\texit(1);\n");
         } else if let Some(ref default) = self.default {
             match &*self.c_type {
-                "int" => code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default)),
+                "int"   => code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default)),
                 "char*" => code.push_str(&format!("\t\t*{} = \"{}\";\n",
                                                   self.c_var,
                                                   c_quote(default))),
@@ -101,15 +106,49 @@ impl PItem {
     }
     /// declarations for the parse function.
     fn decl_parse(&self) -> String {
-        String::new()
+        match self.optional.unwrap_or(false) {
+            true => format!("\tint {}__isset = 0;\n", self.c_var),
+            false => String::new(),
+        }
     }
-
+    /// assigns value to c_var using argv[0].
     fn assign(&self) -> String {
-        String::new()
+        let mut code = String::new();
+        let tabbing = if self.optional.unwrap_or(false) {
+            "\t\t"
+        } else {
+            "\t"
+        };
+        match &*self.c_type {
+            "int"   => code.push_str(&format!("{}*{} = atoi(argv[0]);\n", tabbing, self.c_var)),
+            "char*" => code.push_str(&format!("{}*{} = argv[0];\n", tabbing, self.c_var)),
+            _ => ()/* impossible (due to sanity check) */,
+        }
+        match self.optional.unwrap_or(false) {
+            true => code.push_str(&format!("\t\t{}__isset = 1;\n", self.c_var)),
+            _ => (),
+        }
+        code
     }
-
     fn post_loop(&self) -> String {
-        String::new()
+        if !self.optional.unwrap_or(false) {
+            return String::new();
+        }
+        let mut code = String::new();
+        code.push_str(&format!("\tif (!{}__isset) {{\n", self.c_var));
+        if let Some(ref default) = self.default {
+            match &*self.c_type {
+                "int"   => code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default)),
+                "char*" => code.push_str(&format!("\t\t*{} = \"{}\";\n",
+                                                  self.c_var,
+                                                  c_quote(default))),
+                _ => ()/* impossible */,
+            }
+        } else {
+            return String::new();
+        }
+        code.push_str("\t}\n");
+        code
     }
 }
 
@@ -139,6 +178,7 @@ impl Spec {
                 .into_iter()
                 .any(|&tp| tp == pi.c_type);
             assert!(valid_type, format!("invalid c type: \"{}\"", pi.c_type));
+            // TODO way more stuff belongs here
         }
         for pi in &self.non_positional {
             assert!(identifier_re.is_match(&pi.c_var),
@@ -147,9 +187,9 @@ impl Spec {
                 .into_iter()
                 .any(|&tp| tp == pi.c_type);
             assert!(valid_type, format!("invalid c type: \"{}\"", pi.c_type));
-            assert!(pi.name.find(' ').is_none(),
-                    "invalid argument name: \"{}\"",
-                    pi.name);
+            assert!(pi.long.find(' ').is_none(),
+                    "invalid argument long: \"{}\"",
+                    pi.long);
             if pi.no_arg.unwrap_or(false) {
                 assert!(pi.c_type == "int",
                         "options that have no_arg set must be of c_type int");
@@ -164,7 +204,7 @@ impl Spec {
             if let Some(ref aliases) = pi.aliases {
                 for alias in aliases {
                     assert!(alias.find(' ').is_none(),
-                            "invalid argument alias name: \"{}\"",
+                            "invalid argument alias: \"{}\"",
                             alias);
                 }
             }
@@ -179,15 +219,38 @@ impl Spec {
     }
     /// creates the usage function in C.
     fn c_usage(&self) -> String {
-        // TODO: positional usage
-        let positional_usage = "[TODO ...]";
-        let mut help = String::from("\t       \"  -h  --help\\n\"\n\
-                                    \t       \"        print this usage and exit\\n\"\n");
+        let positional_usage = {
+            let mut pos = String::new();
+            let mut noptional = 0;
+            for pi in &self.positional {
+                pos.push(' ');
+                if pi.optional.unwrap_or(false) {
+                    pos.push('[');
+                    noptional += 1;
+                }
+                pos.push_str(&pi.help_item);
+            }
+            pos.push_str(&(0..noptional).map(|_| ']').collect::<String>());
+            pos
+        };
+        let mut help = String::new();
+        help.push_str(&self.positional
+                           .iter()
+                           .map(|ref pi| if let Some(ref h) = pi.help {
+                                    format!("\t       \"  {}\\n\"\n\t       \"        {}\\n\"\n",
+                                            pi.help_item,
+                                            &c_quote(&h))
+                                } else {
+                                    format!("\t       \"  {}\\n\"\n", pi.help_item)
+                                })
+                           .collect::<String>());
+        help.push_str("\t       \"  -h  --help\\n\"\n\
+                      \t       \"        print this usage and exit\\n\"\n");
         help.push_str(&self.non_positional
                            .iter()
                            .map(|ref npi| {
             let mut long = String::from("  --");
-            long.push_str(&npi.name);
+            long.push_str(&npi.long);
             if let Some(ref aliases) = npi.aliases {
                 for alias in aliases {
                     long.push_str("  --");
@@ -210,7 +273,7 @@ impl Spec {
         })
                            .collect::<String>());
         format!("static void usage(const char *progname) {{\n\
-                \tprintf(\"usage: %s [options] {}\\n%s\", progname,\n\
+                \tprintf(\"usage: %s [options]{}\\n%s\", progname,\n\
                 {}\t       );\n}}\n",
                 positional_usage,
                 help)
@@ -286,20 +349,49 @@ impl Spec {
         for npi in &self.non_positional {
             body.push_str(&npi.post_loop());
         }
-        body.push('\n');
+        body.push_str("\targv += optind;\n\targc -= optind;\n\n");
 
         // decls, positional
-        for pi in &self.positional {
+        let required: Vec<&PItem> = self.positional
+            .iter()
+            .filter(|p| !p.optional.unwrap_or(false))
+            .collect();
+        let nrequired = required.len();
+        for pi in &required {
             body.push_str(&pi.decl_parse());
         }
 
         // parse loop, positional
-        body.push_str("\twhile (optind < argc) {\n");
-        body.push_str("\t\t/* TODO: positional loop */\n"); // TODO
-        body.push_str("\t\toptind++;\n\t}\n");
+        body.push_str(&format!("\tif (argc < {}) {{\n", nrequired));
+        body.push_str("\t\tusage(argv[0]);\n\t\texit(1);\n\t}\n");
+        for pi in &required {
+            body.push_str(&format!("{}\targv++;\n", pi.assign()));
+        }
+        body.push_str(&format!("\targc -= {};\n\n", nrequired));
 
         // post loop, positional
-        for pi in &self.positional {
+        for pi in &required {
+            body.push_str(&pi.post_loop());
+        }
+
+        // decls, positional optional
+        let optional: Vec<&PItem> = self.positional
+            .iter()
+            .filter(|p| p.optional.unwrap_or(false))
+            .collect();
+        for pi in &optional {
+            body.push_str(&pi.decl_parse());
+        }
+
+        // parse loop, positional optional
+        for pi in &optional {
+            body.push_str("\tif (argc > 0) {\n");
+            body.push_str(&pi.assign());
+            body.push_str("\t\targv++; argc--;\n\t}\n");
+        }
+
+        // post loop, positional optional
+        for pi in &optional {
             body.push_str(&pi.post_loop());
         }
 

@@ -4,15 +4,31 @@
     {
       "c_var": "out_file",
       "c_type": "char*",
-      "help": "the output file"
+      "help_item": "IN_FILE"
     },{
       "c_var": "in_file",
-      "c_type": "char*"
+      "c_type": "char*",
+      "help_item": "OUT_FILE",
+      "help": "the output file"
+    },{
+      "c_var": "fave_word",
+      "c_type": "char*",
+      "help_item": "FAV_WORD",
+      "help": "favorite word",
+      "optional": true,
+      "default": "abstraction"
+    },{
+      "c_var": "fave_number",
+      "c_type": "int",
+      "help_item": "FAV_NUM",
+      "help": "favorite number",
+      "optional": true,
+      "default": "0xDEADBEEF"
     }
   ],
   "non_positional": [
     {
-      "name": "block-size",
+      "long": "block-size",
       "short": "b",
       "aliases": ["bs"],
       "c_type": "int",
@@ -24,12 +40,12 @@
     {
       "c_var": "quiet",
       "c_type": "int",
-      "name": "quiet",
+      "long": "quiet",
       "short": "q",
       "no_arg": true
     },
     {
-      "name": "name",
+      "long": "name",
       "short": "n",
       "c_type": "char*",
       "c_var": "username",
