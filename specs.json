@@ -11,43 +11,42 @@
       "help_item": "OUT_FILE",
       "help": "the output file"
     },{
-      "c_var": "fave_word",
+      "c_var": "words",
       "c_type": "char*",
-      "help_item": "FAV_WORD",
-      "help": "favorite word",
-      "optional": true,
-      "default": "abstraction"
-    },{
-      "c_var": "fave_number",
-      "c_type": "int",
-      "help_item": "FAV_NUM",
-      "help": "favorite number",
-      "optional": true,
-      "default": "0xDEADBEEF"
+      "help_item": "WORD",
+      "help": "word(s) of interest",
+      "multi": true
     }
   ],
   "non_positional": [
     {
+      "c_var": "block_size",
+      "c_type": "int",
       "long": "block-size",
       "short": "b",
       "aliases": ["bs"],
-      "c_type": "int",
-      "c_var": "block_size",
       "help": "this is help text for block_size, defaults to 12.",
       "default": "12"
-    },
-    {
+    },{
+      "c_var": "fave_number",
+      "c_type": "int",
+      "long": "fav-number",
+      "short": "f",
+      "help_item": "FAV_NUM",
+      "help": "favorite number",
+      "optional": true,
+      "default": "0xDEADBEEF"
+    },{
       "c_var": "quiet",
       "c_type": "int",
       "long": "quiet",
       "short": "q",
       "no_arg": true
-    },
-    {
+    },{
+      "c_var": "username",
+      "c_type": "char*",
       "long": "name",
       "short": "n",
-      "c_type": "char*",
-      "c_var": "username",
       "default": "John Smith"
     }
   ]

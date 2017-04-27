@@ -47,7 +47,9 @@ struct PItem {
     help: Option<String>,
     optional: Option<bool>,
     default: Option<String>,
-    multi: Option<bool>, // only valid for last item TODO: actually implement
+    multi: Option<bool>,
+    //multi: c_var will be c_type*, and c_var__size will be size_t. default occupies first entry.
+    //TODO: multi optional doesn't compile correctly.
 }
 
 #[derive(Deserialize)]
@@ -174,7 +176,15 @@ impl NPItem {
 impl PItem {
     /// declarations for the main function.
     fn decl_main(&self) -> String {
-        format!("\t{} {};\n", self.c_type, self.c_var)
+        match self.multi.unwrap_or(false) {
+            true => {
+                format!("\t{} *{};\n\tsize_t {}__size;\n",
+                        self.c_type,
+                        self.c_var,
+                        self.c_var)
+            }
+            false => format!("\t{} {};\n", self.c_type, self.c_var),
+        }
     }
     /// declarations for the parse function.
     fn decl_parse(&self) -> String {
@@ -191,10 +201,16 @@ impl PItem {
         } else {
             "\t"
         };
-        match &*self.c_type {
-            "int"   => code.push_str(&format!("{}*{} = atoi(argv[0]);\n", tabbing, self.c_var)),
-            "char*" => code.push_str(&format!("{}*{} = argv[0];\n", tabbing, self.c_var)),
-            _ => ()/* impossible (due to sanity check) */,
+        if self.multi.unwrap_or(false) {
+            code.push_str(&format!("\t\t*{} = argv;\n\t\t*{}__size = argc;\n",
+                                   self.c_var,
+                                   self.c_var));
+        } else {
+            match &*self.c_type {
+                "int"   => code.push_str(&format!("{}*{} = atoi(argv[0]);\n", tabbing, self.c_var)),
+                "char*" => code.push_str(&format!("{}*{} = argv[0];\n", tabbing, self.c_var)),
+                _ => ()/* impossible (due to sanity check) */,
+            }
         }
         match self.optional.unwrap_or(false) {
             true => code.push_str(&format!("\t\t{}__isset = 1;\n", self.c_var)),
@@ -209,12 +225,19 @@ impl PItem {
         let mut code = String::new();
         code.push_str(&format!("\tif (!{}__isset) {{\n", self.c_var));
         if let Some(ref default) = self.default {
-            match &*self.c_type {
-                "int"   => code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default)),
-                "char*" => code.push_str(&format!("\t\t*{} = \"{}\";\n",
-                                                  self.c_var,
-                                                  c_quote(default))),
-                _ => ()/* impossible */,
+            if self.multi.unwrap_or(false) {
+                code.push_str(&format!("\t\t*{} = &\"{}\\0\";\n\t\t*{}__size = 1\n",
+                                       self.c_var,
+                                       c_quote(default),
+                                       self.c_var))
+            } else {
+                match &*self.c_type {
+                    "int"   => code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default)),
+                    "char*" => code.push_str(&format!("\t\t*{} = \"{}\\0\";\n",
+                                                      self.c_var,
+                                                      c_quote(default))),
+                    _ => ()/* impossible */,
+                }
             }
         } else {
             return String::new();
@@ -236,6 +259,11 @@ impl PItem {
         }
         if self.default.is_some() && !self.optional.unwrap_or(false) {
             let e = String::from("cannot set default value for non-optional positional argument");
+            return Err(SanityCheckError::new(e));
+        }
+        if self.multi.unwrap_or(false) && self.c_type != "char*" {
+            let e = String::from("multi-valued argument must be of type char* \
+                                 (though they will be stored in char**)");
             return Err(SanityCheckError::new(e));
         }
         Ok(())
@@ -275,10 +303,6 @@ impl Spec {
                                      can take multiple values");
                 return Err(SanityCheckError::new(e));
             }
-            if pi.multi.unwrap_or(false) {
-                // TODO: implement and remove this branch
-                return Err(SanityCheckError::new(String::from("multi is not yet implemented")));
-            }
             if o {
                 saw_positional_optional = true
             }
@@ -307,6 +331,9 @@ impl Spec {
                     noptional += 1;
                 }
                 pos.push_str(&pi.help_item);
+                if pi.multi.unwrap_or(false) {
+                    pos.push_str("...");
+                }
             }
             pos.push_str(&(0..noptional).map(|_| ']').collect::<String>());
             pos
@@ -361,7 +388,14 @@ impl Spec {
         let mut body = String::new();
         body.push_str("void parse_args(int argc, char **argv");
         for pi in &self.positional {
-            body.push_str(&format!(", {} *{}", pi.c_type, pi.c_var))
+            if pi.multi.unwrap_or(false) {
+                body.push_str(&format!(", {} **{}, size_t *{}__size",
+                                       pi.c_type,
+                                       pi.c_var,
+                                       pi.c_var))
+            } else {
+                body.push_str(&format!(", {} *{}", pi.c_type, pi.c_var));
+            }
         }
         for npi in &self.non_positional {
             body.push_str(&format!(", {} *{}", npi.c_type, npi.c_var))
@@ -432,9 +466,18 @@ impl Spec {
         // decls, positional
         let required: Vec<&PItem> = self.positional
             .iter()
-            .filter(|p| !p.optional.unwrap_or(false))
+            .filter(|p| !p.optional.unwrap_or(false) && !p.multi.unwrap_or(false))
             .collect();
-        let nrequired = required.len();
+        let nrequired =
+            required.len() +
+            if self.positional
+                   .iter()
+                   .find(|p| p.multi.unwrap_or(false) && !p.optional.unwrap_or(false))
+                   .is_some() {
+                1
+            } else {
+                0
+            };
         for pi in &required {
             body.push_str(&pi.decl_parse());
         }
@@ -445,7 +488,7 @@ impl Spec {
         for pi in &required {
             body.push_str(&format!("{}\targv++;\n", pi.assign()));
         }
-        body.push_str(&format!("\targc -= {};\n\n", nrequired));
+        body.push_str(&format!("\targc -= {};\n\n", required.len()));
 
         // post loop, positional
         for pi in &required {
@@ -455,7 +498,7 @@ impl Spec {
         // decls, positional optional
         let optional: Vec<&PItem> = self.positional
             .iter()
-            .filter(|p| p.optional.unwrap_or(false))
+            .filter(|p| p.optional.unwrap_or(false) && !p.multi.unwrap_or(false))
             .collect();
         for pi in &optional {
             body.push_str(&pi.decl_parse());
@@ -470,6 +513,17 @@ impl Spec {
 
         // post loop, positional optional
         for pi in &optional {
+            body.push_str(&pi.post_loop());
+        }
+
+        let multi: Option<&PItem> = self.positional
+            .iter()
+            .find(|p| p.multi.unwrap_or(false));
+        if let Some(pi) = multi {
+            body.push_str(&pi.decl_parse());
+            body.push_str("\tif (argc > 0) {\n");
+            body.push_str(&pi.assign());
+            body.push_str("\t\targv++; argc--;\n\t}\n");
             body.push_str(&pi.post_loop());
         }
 
@@ -490,7 +544,10 @@ impl Spec {
 
         main.push_str("\n\tparse_args(argc, argv");
         for pi in &self.positional {
-            main.push_str(&format!(", &{}", pi.c_var))
+            main.push_str(&format!(", &{}", pi.c_var));
+            if pi.multi.unwrap_or(false) {
+                main.push_str(&format!(", &{}__size", pi.c_var))
+            }
         }
         for npi in &self.non_positional {
             main.push_str(&format!(", &{}", npi.c_var))
