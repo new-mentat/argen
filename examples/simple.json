@@ -1,0 +1,39 @@
+{
+  "c_file": "simple.c",
+  "positional": [
+    {
+      "c_var": "out_file",
+      "c_type": "char*",
+      "help": "the output file"
+    },{
+      "c_var": "in_file",
+      "c_type": "char*"
+    }
+  ],
+  "non_positional": [
+    {
+      "name": "block-size",
+      "short": "b",
+      "aliases": ["bs"],
+      "c_type": "int",
+      "c_var": "block_size",
+      "help": "this is help text for block_size",
+      "required": "true",
+      "default": "12"
+    },
+    {
+      "c_var": "max_warp",
+      "c_type": "int",
+      "name": "max_warp",
+      "short": "q",
+      "no_arg": true
+    },
+    {
+      "name": "cores",
+      "short": "n",
+      "c_type": "char*",
+      "c_var": "username",
+      "default": "John Smith"
+    }
+  ]
+}
