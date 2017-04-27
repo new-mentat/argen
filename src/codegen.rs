@@ -188,9 +188,10 @@ impl PItem {
     }
     /// declarations for the parse function.
     fn decl_parse(&self) -> String {
-        match self.optional.unwrap_or(false) {
-            true => format!("\tint {}__isset = 0;\n", self.c_var),
-            false => String::new(),
+        if self.optional.unwrap_or(false) && self.default.is_some() {
+            format!("\tint {}__isset = 0;\n", self.c_var)
+        } else {
+            String::new()
         }
     }
     /// assigns value to c_var using argv[0].
@@ -202,8 +203,10 @@ impl PItem {
             "\t"
         };
         if self.multi.unwrap_or(false) {
-            code.push_str(&format!("\t\t*{} = argv;\n\t\t*{}__size = argc;\n",
+            code.push_str(&format!("{}*{} = argv;\n{}*{}__size = argc;\n",
+                                   tabbing,
                                    self.c_var,
+                                   tabbing,
                                    self.c_var));
         } else {
             match &*self.c_type {
@@ -212,7 +215,7 @@ impl PItem {
                 _ => ()/* impossible (due to sanity check) */,
             }
         }
-        match self.optional.unwrap_or(false) {
+        match self.optional.unwrap_or(false) && self.default.is_some() {
             true => code.push_str(&format!("\t\t{}__isset = 1;\n", self.c_var)),
             _ => (),
         }
@@ -461,7 +464,6 @@ impl Spec {
         for npi in &self.non_positional {
             body.push_str(&npi.post_loop());
         }
-        body.push_str("\targv += optind;\n\targc -= optind;\n\n");
 
         // decls, positional
         let required: Vec<&PItem> = self.positional
@@ -483,8 +485,9 @@ impl Spec {
         }
 
         // parse loop, positional
-        body.push_str(&format!("\tif (argc < {}) {{\n", nrequired));
+        body.push_str(&format!("\n\tif (argc-optind < {}) {{\n", nrequired));
         body.push_str("\t\tusage(argv[0]);\n\t\texit(1);\n\t}\n");
+        body.push_str("\targv += optind;\n\targc -= optind;\n\n");
         for pi in &required {
             body.push_str(&format!("{}\targv++;\n", pi.assign()));
         }
@@ -521,9 +524,13 @@ impl Spec {
             .find(|p| p.multi.unwrap_or(false));
         if let Some(pi) = multi {
             body.push_str(&pi.decl_parse());
-            body.push_str("\tif (argc > 0) {\n");
-            body.push_str(&pi.assign());
-            body.push_str("\t\targv++; argc--;\n\t}\n");
+            if pi.optional.unwrap_or(false) {
+                body.push_str("\tif (argc > 0) {\n");
+                body.push_str(&pi.assign());
+                body.push_str("\t}\n");
+            } else {
+                body.push_str(&pi.assign());
+            }
             body.push_str(&pi.post_loop());
         }
 

@@ -9,13 +9,15 @@
       "c_var": "in_file",
       "c_type": "char*",
       "help_item": "OUT_FILE",
-      "help": "the output file"
+      "help": "the output file",
+      "optional": true
     },{
       "c_var": "words",
       "c_type": "char*",
       "help_item": "WORD",
       "help": "word(s) of interest",
-      "multi": true
+      "multi": true,
+      "optional": true
     }
   ],
   "non_positional": [
