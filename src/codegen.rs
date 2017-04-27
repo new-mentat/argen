@@ -1,6 +1,7 @@
 extern crate regex;
 extern crate serde_json;
 
+use std::collections::HashSet;
 use std::error;
 use std::fmt;
 use std::io::{Read, Write};
@@ -411,13 +412,20 @@ impl Spec {
         }
 
         // longopts
+        let mut all_bytes: HashSet<u8> = (2..255).collect();
+        for npi in &self.non_positional {
+            if let Some(ref s) = npi.short {
+                all_bytes.remove(&s.as_bytes()[0]);
+            }
+        }
+        let mut iter_bytes = all_bytes.drain();
         let uniqs: Vec<u8> = self.non_positional
             .iter()
             .map(|npi| {
                      if let Some(ref s) = npi.short {
                          s.as_bytes()[0]
                      } else {
-                         1 // TODO: stuff won't work if longopts don't have a shortname
+                         iter_bytes.next().expect("too many non-positional arguments")
                      }
                  })
             .collect();

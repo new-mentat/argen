@@ -33,7 +33,6 @@
       "c_var": "fave_number",
       "c_type": "int",
       "long": "fav-number",
-      "short": "f",
       "help_item": "FAV_NUM",
       "help": "favorite number",
       "optional": true,
@@ -48,7 +47,6 @@
       "c_var": "username",
       "c_type": "char*",
       "long": "name",
-      "short": "n",
       "default": "John Smith"
     }
   ]
