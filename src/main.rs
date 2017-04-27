@@ -11,7 +11,9 @@ use getopts::Options;
 use std::env;
 use std::fs::File;
 use std::io;
+use std::io::Write;
 use std::path::Path;
+use std::process;
 
 
 fn print_usage(program: &str, opts: Options) {
@@ -23,6 +25,11 @@ pub fn codegen(filename: String, output: Option<String>) {
     let path = Path::new(&filename);
     let f = File::open(&path).expect("open input json");
     let s = Spec::from_reader(f);
+    if let Err(e) = s {
+        writeln!(&mut io::stderr(), "Spec Parse Error: {}", e).unwrap();
+        process::exit(1);
+    }
+    let s = s.unwrap();
     match output {
         Some(f) => {
             let p = Path::new(&f);

@@ -33,8 +33,7 @@
       "aliases": ["bs"],
       "c_type": "int",
       "c_var": "block_size",
-      "help": "this is help text for block_size",
-      "required": "true",
+      "help": "this is help text for block_size, defaults to 12.",
       "default": "12"
     },
     {

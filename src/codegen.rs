@@ -1,6 +1,8 @@
 extern crate regex;
 extern crate serde_json;
 
+use std::error;
+use std::fmt;
 use std::io::{Read, Write};
 use regex::Regex;
 
@@ -12,14 +14,39 @@ fn c_quote(i: &str) -> String {
     i.replace("\"", "\\\"").replace("\n", "\\n")
 }
 
+/// Error type for sanity checks
+#[derive(Debug)]
+pub struct SanityCheckError {
+    descr: String,
+}
+impl SanityCheckError {
+    fn new(s: String) -> SanityCheckError {
+        SanityCheckError { descr: s }
+    }
+}
+impl fmt::Display for SanityCheckError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.descr)
+    }
+}
+impl error::Error for SanityCheckError {
+    fn description(&self) -> &str {
+        &self.descr
+    }
+    fn cause(&self) -> Option<&error::Error> {
+        None
+    }
+}
+
+
 #[derive(Deserialize)]
 struct PItem {
     c_var: String,
     c_type: String,
     help_item: String,
     help: Option<String>,
-    optional: Option<bool>, // cannot preceed a non-optional arg
-    default: Option<String>, // only valid if optional
+    optional: Option<bool>,
+    default: Option<String>,
     multi: Option<bool>, // only valid for last item TODO: actually implement
 }
 
@@ -31,8 +58,8 @@ struct NPItem {
     short: Option<String>,
     aliases: Option<Vec<String>>,
     help: Option<String>,
-    required: Option<bool>, // if true, no_arg cannot also be set
-    no_arg: Option<bool>, // if true, c_var must be int, and is set to 1 when option is given
+    required: Option<bool>,
+    no_arg: Option<bool>,
     default: Option<String>,
 }
 
@@ -96,6 +123,51 @@ impl NPItem {
         code.push_str("\t}\n");
         code
     }
+    /// assertion failure when self is invalid.
+    fn sanity_check(&self) -> Result<(), SanityCheckError> {
+        let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
+        if !identifier_re.is_match(&self.c_var) {
+            return Err(SanityCheckError::new(format!("invalid c variable \"{}\"", self.c_var)));
+        }
+        let valid_type = (&PERMITTED_C_TYPES)
+            .into_iter()
+            .any(|&tp| tp == self.c_type);
+        if !valid_type {
+            return Err(SanityCheckError::new(format!("invalid c type: \"{}\"", self.c_type)));
+        }
+        if self.long.find(' ').is_some() {
+            return Err(SanityCheckError::new(format!("invalid argument long: \"{}\"", self.long)));
+        }
+        if self.no_arg.unwrap_or(false) {
+            if self.c_type != "int" {
+                let e = String::from("options that have no_arg set must be of c_type int");
+                return Err(SanityCheckError::new(e));
+            }
+            if self.required.unwrap_or(false) {
+                let e = String::from("options that have no_arg set cannot also be required");
+                return Err(SanityCheckError::new(e));
+            }
+        }
+        if self.default.is_some() && self.required.unwrap_or(false) {
+            let e = String::from("options that are required cannot have a default value");
+            return Err(SanityCheckError::new(e));
+        }
+        if let Some(ref short_name) = self.short {
+            if short_name.len() != 1 {
+                let e = format!("invalid short name: \"{}\"", short_name);
+                return Err(SanityCheckError::new(e));
+            }
+        }
+        if let Some(ref aliases) = self.aliases {
+            for alias in aliases {
+                if alias.find(' ').is_some() {
+                    let e = format!("invalid argument alias: \"{}\"", alias);
+                    return Err(SanityCheckError::new(e));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 
@@ -150,6 +222,24 @@ impl PItem {
         code.push_str("\t}\n");
         code
     }
+    /// assertion failure when self is invalid.
+    fn sanity_check(&self) -> Result<(), SanityCheckError> {
+        let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
+        if !identifier_re.is_match(&self.c_var) {
+            return Err(SanityCheckError::new(format!("invalid c variable \"{}\"", self.c_var)));
+        }
+        let valid_type = (&PERMITTED_C_TYPES)
+            .into_iter()
+            .any(|&tp| tp == self.c_type);
+        if !valid_type {
+            return Err(SanityCheckError::new(format!("invalid c type: \"{}\"", self.c_type)));
+        }
+        if self.default.is_some() && !self.optional.unwrap_or(false) {
+            let e = String::from("cannot set default value for non-optional positional argument");
+            return Err(SanityCheckError::new(e));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Deserialize)]
@@ -161,54 +251,42 @@ pub struct Spec {
 
 impl Spec {
     /// deserializes json from a reader into a Spec.
-    pub fn from_reader<R>(rdr: R) -> Spec
+    pub fn from_reader<R>(rdr: R) -> Result<Spec, SanityCheckError>
         where R: Read
     {
         let s: Spec = serde_json::from_reader(rdr).expect("parse json argument spec");
-        s.sanity_check(); // panic if nonsense input
-        s
+        s.sanity_check()?;
+        Ok(s)
     }
     /// check all items in the spec to make sure they are valid.
-    fn sanity_check(&self) {
-        let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
-        for pi in &self.positional {
-            assert!(identifier_re.is_match(&pi.c_var),
-                    format!("invalid c variable \"{}\"", pi.c_var));
-            let valid_type = (&PERMITTED_C_TYPES)
-                .into_iter()
-                .any(|&tp| tp == pi.c_type);
-            assert!(valid_type, format!("invalid c type: \"{}\"", pi.c_type));
-            // TODO way more stuff belongs here
-        }
-        for pi in &self.non_positional {
-            assert!(identifier_re.is_match(&pi.c_var),
-                    format!("invalid c variable \"{}\"", pi.c_var));
-            let valid_type = (&PERMITTED_C_TYPES)
-                .into_iter()
-                .any(|&tp| tp == pi.c_type);
-            assert!(valid_type, format!("invalid c type: \"{}\"", pi.c_type));
-            assert!(pi.long.find(' ').is_none(),
-                    "invalid argument long: \"{}\"",
-                    pi.long);
-            if pi.no_arg.unwrap_or(false) {
-                assert!(pi.c_type == "int",
-                        "options that have no_arg set must be of c_type int");
-                assert!(!pi.required.unwrap_or(false),
-                        "options that have no_arg set cannot also be required");
+    fn sanity_check(&self) -> Result<(), SanityCheckError> {
+        let mut saw_positional_optional = false;
+        for i in 0..self.positional.len() {
+            let ref pi = self.positional[i];
+            pi.sanity_check()?;
+            let o = pi.optional.unwrap_or(false);
+            if saw_positional_optional && !o {
+                let e = String::from("non-optional positional argument \
+                                     cannot come after an optional one");
+                return Err(SanityCheckError::new(e));
             }
-            if let Some(ref short_name) = pi.short {
-                assert!(short_name.len() == 1,
-                        "invalid short name: \"{}\"",
-                        short_name);
+            if pi.multi.unwrap_or(false) && i != self.positional.len() - 1 {
+                let e = String::from("only that last positional argument \
+                                     can take multiple values");
+                return Err(SanityCheckError::new(e));
             }
-            if let Some(ref aliases) = pi.aliases {
-                for alias in aliases {
-                    assert!(alias.find(' ').is_none(),
-                            "invalid argument alias: \"{}\"",
-                            alias);
-                }
+            if pi.multi.unwrap_or(false) {
+                // TODO: implement and remove this branch
+                return Err(SanityCheckError::new(String::from("multi is not yet implemented")));
+            }
+            if o {
+                saw_positional_optional = true
             }
         }
+        for npi in &self.non_positional {
+            npi.sanity_check()?
+        }
+        Ok(())
     }
     /// creates the necessary headers in C.
     fn c_headers(&self) -> String {
@@ -419,7 +497,7 @@ impl Spec {
         }
         main.push_str(");\n\n");
 
-        main.push_str("\t/* TODO: call your code here */\n");
+        main.push_str("\t/* call your code here */\n");
         main.push_str("}\n");
         main
     }
