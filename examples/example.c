@@ -7,18 +7,21 @@
 static void usage(const char *progname) {
 	printf("usage: %s [options] IN_FILE [OUT_FILE [WORD...]]\n%s", progname,
 	       "  IN_FILE\n"
+	       "        an input file for this example program\n"
 	       "  OUT_FILE\n"
-	       "        the output file\n"
+	       "        where we'll put some output\n"
 	       "  WORD\n"
 	       "        word(s) of interest\n"
 	       "  -h  --help\n"
 	       "        print this usage and exit\n"
-	       "  -b  --block-size  --bs\n"
-	       "        this is help text for block_size, defaults to 12.\n"
-	       "       --fav-number\n"
-	       "        favorite number\n"
+	       "  -b  --block-size <num>  (aliased: --bs)\n"
+	       "        set the block size, defaults to 12.\n"
+	       "      --fav-number <num>\n"
+	       "        your favorite number\n"
 	       "  -q  --quiet\n"
-	       "       --name\n"
+	       "        disable output\n"
+	       "      --name <arg>\n"
+	       "        your name\n"
 	       );
 }
 
@@ -28,9 +31,9 @@ void parse_args(int argc, char **argv, char* *out_file, char* *in_file, char* **
 	int username__isset = 0;
 	static struct option longopts[] = {
 		{"block-size", required_argument, 0, 98},
-		{"fav-number", required_argument, 0, 166},
+		{"fav-number", required_argument, 0, 252},
 		{"quiet", no_argument, 0, 113},
-		{"name", required_argument, 0, 34},
+		{"name", required_argument, 0, 246},
 		{"help", 0, 0, 'h'},
 		{0, 0, 0, 0}
 	};
@@ -41,14 +44,14 @@ void parse_args(int argc, char **argv, char* *out_file, char* *in_file, char* **
 			*block_size = atoi(optarg);
 			block_size__isset = 1;
 			break;
-		case 166:
+		case 252:
 			*fave_number = atoi(optarg);
 			fave_number__isset = 1;
 			break;
 		case 113:
 			*quiet = 1;
 			break;
-		case 34:
+		case 246:
 			*username = optarg;
 			username__isset = 1;
 			break;

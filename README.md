@@ -5,7 +5,7 @@ beautiful CLIs without writing tedious C code. All the code to implement
 the robust CLI below was created by feeding a simple TOML file into
 argen!
 
-![argen](examples/example_cli.png)
+![argen](examples/example.png)
 
 
 ## Features 
