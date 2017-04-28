@@ -1,29 +1,35 @@
 # argen
 
-Generate command line interfaces (CLIs) in C with ease. Using argen, you can swiftly generate
-beautiful CLIs without writing tedious C code. All the code to implement 
-the robust CLI below was created by feeding a simple TOML file into
-argen!
+**`argen`** lets you generate argument parsing logic in C from a simple
+config. No more having to write that tedious arg-parsing C code!
 
 ![argen](examples/example.png)
 
-
-## Features 
-- Automatically build command line interfaces in C by configuring a simple TOML file
-- Zero programming logic required
-- Generated C code is easily modifiable and uses standard libraries
-- Convenient support for important CLI behavior such as default values for arguments, positional/non
-  positional argument support, aliases and more
-
 ## Installation 
 
-`Fill in`
+#### Standalone
+
+We have not yet released precompiled binaries for **`argen`**.
+
+#### Source
+
+```sh
+# install rustup.rs
+$ curl https://sh.rustup.rs -sSf | sh
+# clone the source code
+$ git clone https://github.com/kynelee/argen.git
+$ cd argen
+# build
+$ cargo build --release
+# copy binary
+$ cp target/release/argen /usr/local/bin/argen
+```
 
 ## Usage 
 
 A simple command line interface you want to build might resemble this: 
 
-`./executable --arg1 1 --arg2 c "positional_arg" "another_positional_arg`
+`./a.out --arg1 1 --arg2 c --quiet "positional_arg" "another_positional_arg`
 
 To generate the corresponding C code to parse this interface you must create a TOML file which
 describes how your CLI works.
@@ -37,7 +43,9 @@ Include Comment Descriptions
 
 Now, we can generate the C code using this TOML file and argen.
 
-` Command to run `
+```sh
+argen -o main.c spec.toml
+```
 
 Check out the generated code. You'll notice that all the C variables
 corresponding to the value of our command line arguments 
@@ -64,5 +72,5 @@ Other arguments like `--required-arg` are required and will error if no values a
 Writing the code for this is boring and tedious. Using argen, you
 can create this by simply specifying more options in the TOML file. 
 
-Feel free to check out out this [example TOML file](/examples/api.toml) which details all the configuration
+Feel free to check out out this [example TOML file](examples/example_spec.toml) which details all the configuration
 options available, or some [fully functioning examples](/examples/).
