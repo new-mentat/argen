@@ -55,27 +55,27 @@ impl error::Error for SanityCheckError {
 struct PItem {
     c_var: String,
     c_type: String,
-    help_item: String,
-    help: Option<String>,
-    optional: Option<bool>,
+    help_name: String,
+    help_descr: Option<String>,
+    required: Option<bool>,
     default: Option<String>,
     multi: Option<bool>,
     //multi: c_var will be c_type*, and c_var__size will be size_t. default occupies first entry.
-    //TODO: multi optional doesn't compile correctly.
+    //TODO: multi non-required doesn't compile correctly.
 }
 
 #[derive(Deserialize)]
 struct NPItem {
     c_var: String,
     c_type: String,
-    help_item: Option<String>,
-    help: Option<String>,
+    help_name: Option<String>,
+    help_descr: Option<String>,
     long: String,
-    short: Option<String>,
     aliases: Option<Vec<String>>,
+    short: Option<String>,
     required: Option<bool>,
-    no_arg: Option<bool>,
     default: Option<String>,
+    flag: Option<bool>,
 }
 
 impl NPItem {
@@ -85,7 +85,7 @@ impl NPItem {
     }
     /// declarations for the parse_args (not main) function.
     fn decl_parse(&self) -> String {
-        match self.no_arg.unwrap_or(false) {
+        match self.flag.unwrap_or(false) {
             true => String::new(),
             false => format!("\tint {}__isset = 0;\n", self.c_var),
         }
@@ -94,14 +94,14 @@ impl NPItem {
     fn assign(&self) -> String {
         let mut code = String::new();
         match &*self.c_type {
-            "int" => match self.no_arg.unwrap_or(false) {
+            "int" => match self.flag.unwrap_or(false) {
                 true  => return format!("\t\t\t*{} = 1;\n", self.c_var),
                 false => code.push_str(&format!("\t\t\t*{} = atoi(optarg);\n", self.c_var)),
             },
             "char*" => code.push_str(&format!("\t\t\t*{} = optarg;\n", self.c_var)),
             _ => ()/* impossible (due to sanity check) */,
         }
-        match self.no_arg.unwrap_or(false) {
+        match self.flag.unwrap_or(false) {
             false => code.push_str(&format!("\t\t\t{}__isset = 1;\n", self.c_var)),
             _ => (),
         }
@@ -111,7 +111,7 @@ impl NPItem {
     fn long_option(&self, uniq: u8) -> String {
         format!("\t\t{{\"{}\", {}, 0, {}}},\n",
                 self.long,
-                match self.no_arg.unwrap_or(false) {
+                match self.flag.unwrap_or(false) {
                     true => "no_argument",
                     false => "required_argument",
                 },
@@ -153,13 +153,13 @@ impl NPItem {
         if self.long.find(' ').is_some() {
             return Err(SanityCheckError { e: format!("invalid argument long: \"{}\"", self.long) });
         }
-        if self.no_arg.unwrap_or(false) {
+        if self.flag.unwrap_or(false) {
             if self.c_type != "int" {
-                let e = String::from("options that have no_arg set must be of c_type int");
+                let e = String::from("options that are flags must be of c_type int");
                 return Err(SanityCheckError { e });
             }
             if self.required.unwrap_or(false) {
-                let e = String::from("options that have no_arg set cannot also be required");
+                let e = String::from("options that are flags cannot also be required");
                 return Err(SanityCheckError { e });
             }
         }
@@ -201,7 +201,7 @@ impl PItem {
     }
     /// declarations for the parse function.
     fn decl_parse(&self) -> String {
-        if self.optional.unwrap_or(false) && self.default.is_some() {
+        if !self.required.unwrap_or(false) && self.default.is_some() {
             format!("\tint {}__isset = 0;\n", self.c_var)
         } else {
             String::new()
@@ -210,10 +210,10 @@ impl PItem {
     /// assigns value to c_var using argv[0].
     fn assign(&self) -> String {
         let mut code = String::new();
-        let tabbing = if self.optional.unwrap_or(false) {
-            "\t\t"
-        } else {
+        let tabbing = if self.required.unwrap_or(false) {
             "\t"
+        } else {
+            "\t\t"
         };
         if self.multi.unwrap_or(false) {
             code.push_str(&format!("{}*{} = argv;\n{}*{}__size = argc;\n",
@@ -228,14 +228,14 @@ impl PItem {
                 _ => ()/* impossible (due to sanity check) */,
             }
         }
-        match self.optional.unwrap_or(false) && self.default.is_some() {
+        match !self.required.unwrap_or(false) && self.default.is_some() {
             true => code.push_str(&format!("\t\t{}__isset = 1;\n", self.c_var)),
             _ => (),
         }
         code
     }
     fn post_loop(&self) -> String {
-        if !self.optional.unwrap_or(false) {
+        if self.required.unwrap_or(false) {
             return String::new();
         }
         let mut code = String::new();
@@ -273,8 +273,8 @@ impl PItem {
         if !valid_type {
             return Err(SanityCheckError { e: format!("invalid c type: \"{}\"", self.c_type) });
         }
-        if self.default.is_some() && !self.optional.unwrap_or(false) {
-            let e = String::from("cannot set default value for non-optional positional argument");
+        if self.required.unwrap_or(false) && self.default.is_some() {
+            let e = String::from("cannot set default value for required positional argument");
             return Err(SanityCheckError { e });
         }
         if self.multi.unwrap_or(false) && self.c_type != "char*" {
@@ -302,14 +302,14 @@ impl Spec {
     }
     /// check all items in the spec to make sure they are valid.
     fn sanity_check(&self) -> Result<(), SanityCheckError> {
-        let mut saw_positional_optional = false;
+        let mut saw_optional = false;
         for i in 0..self.positional.len() {
             let ref pi = self.positional[i];
             pi.sanity_check()?;
-            let o = pi.optional.unwrap_or(false);
-            if saw_positional_optional && !o {
-                let e = String::from("non-optional positional argument \
-                                     cannot come after an optional one");
+            let r = pi.required.unwrap_or(false);
+            if saw_optional && r {
+                let e = String::from("required positional argument cannot \
+                                     come after a non-required one");
                 return Err(SanityCheckError { e });
             }
             if pi.multi.unwrap_or(false) && i != self.positional.len() - 1 {
@@ -317,8 +317,8 @@ impl Spec {
                                      can take multiple values");
                 return Err(SanityCheckError { e });
             }
-            if o {
-                saw_positional_optional = true
+            if !r {
+                saw_optional = true
             }
         }
         for npi in &self.non_positional {
@@ -340,11 +340,11 @@ impl Spec {
             let mut noptional = 0;
             for pi in &self.positional {
                 pos.push(' ');
-                if pi.optional.unwrap_or(false) {
+                if !pi.required.unwrap_or(false) {
                     pos.push('[');
                     noptional += 1;
                 }
-                pos.push_str(&pi.help_item);
+                pos.push_str(&pi.help_name);
                 if pi.multi.unwrap_or(false) {
                     pos.push_str("...");
                 }
@@ -355,12 +355,12 @@ impl Spec {
         let mut help = String::new();
         help.push_str(&self.positional
                            .iter()
-                           .map(|ref pi| if let Some(ref h) = pi.help {
+                           .map(|ref pi| if let Some(ref d) = pi.help_descr {
                                     format!("\t       \"  {}\\n\"\n\t       \"        {}\\n\"\n",
-                                            pi.help_item,
-                                            &c_quote(&h))
+                                            pi.help_name,
+                                            &c_quote(&d))
                                 } else {
-                                    format!("\t       \"  {}\\n\"\n", pi.help_item)
+                                    format!("\t       \"  {}\\n\"\n", pi.help_name)
                                 })
                            .collect::<String>());
         help.push_str("\t       \"  -h  --help\\n\"\n\
@@ -370,9 +370,9 @@ impl Spec {
                            .map(|ref npi| {
             let mut long = String::from("  --");
             long.push_str(&npi.long);
-            if !npi.no_arg.unwrap_or(false) {
-                if let Some(ref help_item) = npi.help_item {
-                    long.push_str(&format!(" <{}>", help_item));
+            if !npi.flag.unwrap_or(false) {
+                if let Some(ref help_name) = npi.help_name {
+                    long.push_str(&format!(" <{}>", help_name));
                 } else {
                     long.push_str(" <arg>")
                 }
@@ -385,7 +385,7 @@ impl Spec {
                 }
                 long.push_str(")");
             }
-            let help = match npi.help {
+            let descr = match npi.help_descr {
                 Some(ref h) => {
                     let mut hm = String::from("\\n\"\n\t       \"        ");
                     hm.push_str(&c_quote(&h));
@@ -394,9 +394,9 @@ impl Spec {
                 _ => String::new(),
             };
             if let Some(ref short) = npi.short {
-                format!("\t       \"  -{}{}{}\\n\"\n", short, long, help)
+                format!("\t       \"  -{}{}{}\\n\"\n", short, long, descr)
             } else {
-                format!("\t       \"    {}{}\\n\"\n", long, help)
+                format!("\t       \"    {}{}\\n\"\n", long, descr)
             }
         })
                            .collect::<String>());
@@ -464,7 +464,7 @@ impl Spec {
             let s = npi.short.clone();
             let mut v = Vec::new();
             v.push(s.unwrap().as_bytes()[0]);
-            if !npi.no_arg.unwrap_or(false) {
+            if !npi.flag.unwrap_or(false) {
                 v.push(b':');
             }
             v.into_iter().collect::<Vec<u8>>()
@@ -495,13 +495,13 @@ impl Spec {
         // decls, positional
         let required: Vec<&PItem> = self.positional
             .iter()
-            .filter(|p| !p.optional.unwrap_or(false) && !p.multi.unwrap_or(false))
+            .filter(|p| p.required.unwrap_or(false) && !p.multi.unwrap_or(false))
             .collect();
         let nrequired =
             required.len() +
             if self.positional
                    .iter()
-                   .find(|p| p.multi.unwrap_or(false) && !p.optional.unwrap_or(false))
+                   .find(|p| p.required.unwrap_or(false) && p.multi.unwrap_or(false))
                    .is_some() {
                 1
             } else {
@@ -528,7 +528,7 @@ impl Spec {
         // decls, positional optional
         let optional: Vec<&PItem> = self.positional
             .iter()
-            .filter(|p| p.optional.unwrap_or(false) && !p.multi.unwrap_or(false))
+            .filter(|p| !p.required.unwrap_or(false) && !p.multi.unwrap_or(false))
             .collect();
         for pi in &optional {
             body.push_str(&pi.decl_parse());
@@ -551,12 +551,12 @@ impl Spec {
             .find(|p| p.multi.unwrap_or(false));
         if let Some(pi) = multi {
             body.push_str(&pi.decl_parse());
-            if pi.optional.unwrap_or(false) {
+            if pi.required.unwrap_or(false) {
+                body.push_str(&pi.assign());
+            } else {
                 body.push_str("\tif (argc > 0) {\n");
                 body.push_str(&pi.assign());
                 body.push_str("\t}\n");
-            } else {
-                body.push_str(&pi.assign());
             }
             body.push_str(&pi.post_loop());
         }
