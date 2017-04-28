@@ -1,10 +1,10 @@
 extern crate regex;
-extern crate serde_json;
+extern crate toml;
 
 use std::collections::HashSet;
 use std::error;
 use std::fmt;
-use std::io::{Read, Write};
+use std::io::{Write};
 use regex::Regex;
 
 static PERMITTED_C_TYPES: [&'static str; 2] = ["char*", "int"];
@@ -282,11 +282,9 @@ pub struct Spec {
 }
 
 impl Spec {
-    /// deserializes json from a reader into a Spec.
-    pub fn from_reader<R>(rdr: R) -> Result<Spec, SanityCheckError>
-        where R: Read
-    {
-        let s: Spec = serde_json::from_reader(rdr).expect("parse json argument spec");
+    /// deserializes toml from a reader into a Spec.
+    pub fn from_str(toml: &str) -> Result<Spec, SanityCheckError> {
+        let s: Spec = toml::from_str(toml).expect("parse toml argument spec");
         s.sanity_check()?;
         Ok(s)
     }

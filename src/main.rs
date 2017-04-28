@@ -1,8 +1,8 @@
 #[macro_use]
 extern crate serde_derive;
 extern crate getopts;
-extern crate serde_json;
 extern crate regex;
+extern crate toml;
 
 mod codegen;
 
@@ -11,7 +11,7 @@ use getopts::Options;
 use std::env;
 use std::fs::File;
 use std::io;
-use std::io::Write;
+use std::io::{Write, Read};
 use std::path::Path;
 use std::process;
 
@@ -23,8 +23,10 @@ fn print_usage(program: &str, opts: Options) {
 
 pub fn codegen(filename: String, output: Option<String>) {
     let path = Path::new(&filename);
-    let f = File::open(&path).expect("open input json");
-    let s = Spec::from_reader(f);
+    let mut f = File::open(&path).expect("open input toml");
+    let mut contents = String::new();
+    f.read_to_string(&mut contents).expect("read input toml");
+    let s = Spec::from_str(&contents);
     if let Err(e) = s {
         writeln!(&mut io::stderr(), "Spec Parse Error: {}", e).unwrap();
         process::exit(1);

@@ -1,0 +1,50 @@
+[[positional]]
+c_var ="out_file"
+c_type = "char*"
+help_item = "IN_FILE"
+
+[[positional]]
+c_var = "in_file"
+c_type = "char*"
+help_item = "OUT_FILE"
+help = "the output file"
+optional = true
+
+[[positional]]
+c_var = "words"
+c_type = "char*"
+help_item = "WORD"
+help = "word(s) of interest"
+multi = true
+optional = true
+
+[[non_positional]]
+c_var = "block_size"
+c_type = "int"
+long = "block-size"
+short = "b"
+aliases = ["bs"]
+help = "this is help text for block_size, defaults to 12."
+default = "12"
+
+[[non_positional]]
+c_var = "fave_number"
+c_type = "int"
+long = "fav-number"
+help_item = "FAV_NUM"
+help = "favorite number"
+optional = true
+default = "0xDEADBEEF"
+
+[[non_positional]]
+c_var = "quiet"
+c_type = "int"
+long = "quiet"
+short = "q"
+no_arg = true
+
+[[non_positional]]
+c_var = "username"
+c_type = "char*"
+long = "name"
+default = "John Smith"
