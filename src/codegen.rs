@@ -68,10 +68,11 @@ struct PItem {
 struct NPItem {
     c_var: String,
     c_type: String,
+    help_item: Option<String>,
+    help: Option<String>,
     long: String,
     short: Option<String>,
     aliases: Option<Vec<String>>,
-    help: Option<String>,
     required: Option<bool>,
     no_arg: Option<bool>,
     default: Option<String>,
@@ -369,11 +370,20 @@ impl Spec {
                            .map(|ref npi| {
             let mut long = String::from("  --");
             long.push_str(&npi.long);
+            if !npi.no_arg.unwrap_or(false) {
+                if let Some(ref help_item) = npi.help_item {
+                    long.push_str(&format!(" <{}>", help_item));
+                } else {
+                    long.push_str(" <arg>")
+                }
+            }
             if let Some(ref aliases) = npi.aliases {
+                long.push_str("  (aliased:");
                 for alias in aliases {
-                    long.push_str("  --");
+                    long.push_str(" --");
                     long.push_str(alias);
                 }
+                long.push_str(")");
             }
             let help = match npi.help {
                 Some(ref h) => {

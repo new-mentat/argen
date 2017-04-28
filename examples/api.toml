@@ -2,12 +2,13 @@
 c_var ="out_file"
 c_type = "char*"
 help_item = "IN_FILE"
+help = "an input file for this example program"
 
 [[positional]]
 c_var = "in_file"
 c_type = "char*"
 help_item = "OUT_FILE"
-help = "the output file"
+help = "where we'll put some output"
 optional = true
 
 [[positional]]
@@ -15,30 +16,31 @@ c_var = "words"
 c_type = "char*"
 help_item = "WORD"
 help = "word(s) of interest"
-multi = true
 optional = true
+multi = true
 
 [[non_positional]]
 c_var = "block_size"
 c_type = "int"
+help_item = "num"
+help = "set the block size, defaults to 12."
 long = "block-size"
 short = "b"
 aliases = ["bs"]
-help = "this is help text for block_size, defaults to 12."
 default = "12"
 
 [[non_positional]]
 c_var = "fave_number"
 c_type = "int"
+help_item = "num"
+help = "your favorite number"
 long = "fav-number"
-help_item = "FAV_NUM"
-help = "favorite number"
-optional = true
 default = "0xDEADBEEF"
 
 [[non_positional]]
 c_var = "quiet"
 c_type = "int"
+help = "disable output"
 long = "quiet"
 short = "q"
 no_arg = true
@@ -46,5 +48,6 @@ no_arg = true
 [[non_positional]]
 c_var = "username"
 c_type = "char*"
+help = "your name"
 long = "name"
 default = "John Smith"
