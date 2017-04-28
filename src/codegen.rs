@@ -1,16 +1,16 @@
 // Argen
-// Copyright (C) 2017 Matt Lee <matt@kynelee.com>, Lucas Morales <lucas@lucasem.com> 
-// 
+// Copyright (C) 2017 Matt Lee <matt@kynelee.com>, Lucas Morales <lucas@lucasem.com>
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -20,7 +20,7 @@ extern crate toml;
 use std::collections::HashSet;
 use std::error;
 use std::fmt;
-use std::io::{Write};
+use std::io::Write;
 use regex::Regex;
 
 static PERMITTED_C_TYPES: [&str; 2] = ["char*", "int"];
@@ -141,42 +141,42 @@ impl NPItem {
     fn sanity_check(&self) -> Result<(), SanityCheckError> {
         let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
         if !identifier_re.is_match(&self.c_var) {
-            return Err(SanityCheckError{e: format!("invalid c variable \"{}\"", self.c_var)});
+            return Err(SanityCheckError { e: format!("invalid c variable \"{}\"", self.c_var) });
         }
         let valid_type = (&PERMITTED_C_TYPES)
             .into_iter()
             .any(|&tp| tp == self.c_type);
         if !valid_type {
-            return Err(SanityCheckError{e: format!("invalid c type: \"{}\"", self.c_type)});
+            return Err(SanityCheckError { e: format!("invalid c type: \"{}\"", self.c_type) });
         }
         if self.long.find(' ').is_some() {
-            return Err(SanityCheckError{e: format!("invalid argument long: \"{}\"", self.long)});
+            return Err(SanityCheckError { e: format!("invalid argument long: \"{}\"", self.long) });
         }
         if self.no_arg.unwrap_or(false) {
             if self.c_type != "int" {
                 let e = String::from("options that have no_arg set must be of c_type int");
-                return Err(SanityCheckError{e});
+                return Err(SanityCheckError { e });
             }
             if self.required.unwrap_or(false) {
                 let e = String::from("options that have no_arg set cannot also be required");
-                return Err(SanityCheckError{e});
+                return Err(SanityCheckError { e });
             }
         }
         if self.default.is_some() && self.required.unwrap_or(false) {
             let e = String::from("options that are required cannot have a default value");
-            return Err(SanityCheckError{e});
+            return Err(SanityCheckError { e });
         }
         if let Some(ref short_name) = self.short {
             if short_name.len() != 1 {
                 let e = format!("invalid short name: \"{}\"", short_name);
-                return Err(SanityCheckError{e});
+                return Err(SanityCheckError { e });
             }
         }
         if let Some(ref aliases) = self.aliases {
             for alias in aliases {
                 if alias.find(' ').is_some() {
                     let e = format!("invalid argument alias: \"{}\"", alias);
-                    return Err(SanityCheckError{e});
+                    return Err(SanityCheckError { e });
                 }
             }
         }
@@ -264,22 +264,22 @@ impl PItem {
     fn sanity_check(&self) -> Result<(), SanityCheckError> {
         let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
         if !identifier_re.is_match(&self.c_var) {
-            return Err(SanityCheckError{e: format!("invalid c variable \"{}\"", self.c_var)});
+            return Err(SanityCheckError { e: format!("invalid c variable \"{}\"", self.c_var) });
         }
         let valid_type = (&PERMITTED_C_TYPES)
             .into_iter()
             .any(|&tp| tp == self.c_type);
         if !valid_type {
-            return Err(SanityCheckError{e: format!("invalid c type: \"{}\"", self.c_type)});
+            return Err(SanityCheckError { e: format!("invalid c type: \"{}\"", self.c_type) });
         }
         if self.default.is_some() && !self.optional.unwrap_or(false) {
             let e = String::from("cannot set default value for non-optional positional argument");
-            return Err(SanityCheckError{e});
+            return Err(SanityCheckError { e });
         }
         if self.multi.unwrap_or(false) && self.c_type != "char*" {
             let e = String::from("multi-valued argument must be of type char* \
                                  (though they will be stored in char**)");
-            return Err(SanityCheckError{e});
+            return Err(SanityCheckError { e });
         }
         Ok(())
     }
@@ -309,12 +309,12 @@ impl Spec {
             if saw_positional_optional && !o {
                 let e = String::from("non-optional positional argument \
                                      cannot come after an optional one");
-                return Err(SanityCheckError{e});
+                return Err(SanityCheckError { e });
             }
             if pi.multi.unwrap_or(false) && i != self.positional.len() - 1 {
                 let e = String::from("only that last positional argument \
                                      can take multiple values");
-                return Err(SanityCheckError{e});
+                return Err(SanityCheckError { e });
             }
             if o {
                 saw_positional_optional = true
@@ -386,7 +386,7 @@ impl Spec {
             if let Some(ref short) = npi.short {
                 format!("\t       \"  -{}{}{}\\n\"\n", short, long, help)
             } else {
-                format!("\t       \"     {}{}\\n\"\n", long, help)
+                format!("\t       \"    {}{}\\n\"\n", long, help)
             }
         })
                            .collect::<String>());
@@ -430,12 +430,12 @@ impl Spec {
         let mut iter_bytes = all_bytes.drain();
         let uniqs: Vec<u8> = self.non_positional
             .iter()
-            .map(|npi| {
-                     if let Some(ref s) = npi.short {
-                         s.as_bytes()[0]
-                     } else {
-                         iter_bytes.next().expect("too many non-positional arguments")
-                     }
+            .map(|npi| if let Some(ref s) = npi.short {
+                     s.as_bytes()[0]
+                 } else {
+                     iter_bytes
+                         .next()
+                         .expect("too many non-positional arguments")
                  })
             .collect();
         body.push_str("\tstatic struct option longopts[] = {\n");
