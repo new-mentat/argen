@@ -1,46 +1,68 @@
 # argen
 
-Generate CLIs with ease. Using argen, you can quickly generate beautiful CLIs like
-the one below. 
+Generate command line interfaces (CLIs) in C with ease. Using argen, you can swiftly generate
+beautiful CLIs without writing tedious C code. All the code to implement 
+the robust CLI below was created by feeding a simple TOML file into
+argen!
 
-![argen](examples/argen.png)
+![argen](examples/example_cli.png)
+
 
 ## Features 
-- Create robust command line interfaces by configuring a simple JSON file.
-- No programming logic required
-- Generated code only uses standard libraries
-- Currently supports C
+- Automatically build command line interfaces in C by configuring a simple TOML file
+- Zero programming logic required
+- Generated C code is easily modifiable and uses standard libraries
+- Convenient support for important CLI behavior such as default values for arguments, positional/non
+  positional argument support, aliases and more
 
 ## Installation 
 
-If you do not have Rust installed, first install it:
-`https://rustup.rs`
-
-Now, clone the repository. 
-
-`git clone https://github.com/kynelee/argen.git`
+`Fill in`
 
 ## Usage 
 
-argen provides many convenient options for generating a CLI 
-such as aliases, positional and non positional parameters, defaults values, and more! 
+A simple command line interface you want to build might resemble this: 
 
-To build a CLI using argen, you must create a JSON file which describes how your CLI
-works. Feel free to modify one of [our examples](examples/simple.json) as a starting point.
+`./executable --arg1 1 --arg2 c "positional_arg" "another_positional_arg`
 
-After you've created a JSON spec, you can generate your C code using argen.
+To generate the corresponding C code to parse this interface you must create a TOML file which
+describes how your CLI works.
 
-`run command` 
+The corresponding TOML file to generate the C code to implement the above CLI is this 
 
-Check out the corresponding [C code](examples/foo.c) which is generated. It populates C
-variables corresponding to the name and type specified in
-JSON. It also sets any default variables and contains logic for other
-options set in the JSON spec. 
+```
+Inline spec
+Include Comment Descriptions 
+```
 
-When you run the corresponding executable, you'll notice the usage and help
-dialogues which have been created for you. In other words, you've built a fully functioning 
-CLI with 0 programming logic!
+Now, we can generate the C code using this TOML file and argen.
 
-For a glimpse at the full capabilities of argen, check out this [JSON
-spec](examples/robust.json) which provides the configuration and description of all 
-modifiable JSON fields. 
+` Command to run `
+
+Check out the generated code. You'll notice that all the C variables
+corresponding to the value of our command line arguments 
+are declared according to the name and type in the TOML file. After the call to `method_name`,
+all your variables are properly initialized and ready to be used however
+you want. 
+
+When you compile the C code and run the executable, you'll notice the help and usage dialogues 
+displayed in the command line.
+
+In other words, you've built a fully functioning CLI with 0 programming logic!
+
+Argen also supports features which allow you to create much more complex  
+CLIs. 
+
+Imagine if you wanted to create a CLI like this: 
+`/executable --set-flag --def-arg "input_file" --required-arg 2 --optional-arg "maybe" opt_p_arg req_p_arg` 
+
+Here, we have multiple different argument types which we want to pass into the program. 
+An arg type like `--set-flag` requires no value and serves as a flag. Arguments  
+like `--def-arg` should default to some value if not specified. 
+Other arguments like `--required-arg` are required and will error if no values are passed in. 
+
+Writing the code for this is boring and tedious. Using argen, you
+can create this by simply specifying more options in the TOML file. 
+
+Feel free to check out out this [example TOML file](/examples/api.toml) which details all the configuration
+options available, or some [fully functioning examples](/examples/).
