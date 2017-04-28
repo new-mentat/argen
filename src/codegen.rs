@@ -7,8 +7,8 @@ use std::fmt;
 use std::io::{Write};
 use regex::Regex;
 
-static PERMITTED_C_TYPES: [&'static str; 2] = ["char*", "int"];
-static INCLUDES: [&'static str; 4] = ["stdlib", "stdio", "string", "getopt"];
+static PERMITTED_C_TYPES: [&str; 2] = ["char*", "int"];
+static INCLUDES: [&str; 4] = ["stdlib", "stdio", "string", "getopt"];
 
 /// c_quote takes a string and quotes it suitably for use in a char* literal in C.
 fn c_quote(i: &str) -> String {
@@ -18,21 +18,16 @@ fn c_quote(i: &str) -> String {
 /// Error type for sanity checks
 #[derive(Debug)]
 pub struct SanityCheckError {
-    descr: String,
-}
-impl SanityCheckError {
-    fn new(s: String) -> SanityCheckError {
-        SanityCheckError { descr: s }
-    }
+    e: String,
 }
 impl fmt::Display for SanityCheckError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.descr)
+        write!(f, "{}", self.e)
     }
 }
 impl error::Error for SanityCheckError {
     fn description(&self) -> &str {
-        &self.descr
+        &self.e
     }
     fn cause(&self) -> Option<&error::Error> {
         None
@@ -130,42 +125,42 @@ impl NPItem {
     fn sanity_check(&self) -> Result<(), SanityCheckError> {
         let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
         if !identifier_re.is_match(&self.c_var) {
-            return Err(SanityCheckError::new(format!("invalid c variable \"{}\"", self.c_var)));
+            return Err(SanityCheckError{e: format!("invalid c variable \"{}\"", self.c_var)});
         }
         let valid_type = (&PERMITTED_C_TYPES)
             .into_iter()
             .any(|&tp| tp == self.c_type);
         if !valid_type {
-            return Err(SanityCheckError::new(format!("invalid c type: \"{}\"", self.c_type)));
+            return Err(SanityCheckError{e: format!("invalid c type: \"{}\"", self.c_type)});
         }
         if self.long.find(' ').is_some() {
-            return Err(SanityCheckError::new(format!("invalid argument long: \"{}\"", self.long)));
+            return Err(SanityCheckError{e: format!("invalid argument long: \"{}\"", self.long)});
         }
         if self.no_arg.unwrap_or(false) {
             if self.c_type != "int" {
                 let e = String::from("options that have no_arg set must be of c_type int");
-                return Err(SanityCheckError::new(e));
+                return Err(SanityCheckError{e});
             }
             if self.required.unwrap_or(false) {
                 let e = String::from("options that have no_arg set cannot also be required");
-                return Err(SanityCheckError::new(e));
+                return Err(SanityCheckError{e});
             }
         }
         if self.default.is_some() && self.required.unwrap_or(false) {
             let e = String::from("options that are required cannot have a default value");
-            return Err(SanityCheckError::new(e));
+            return Err(SanityCheckError{e});
         }
         if let Some(ref short_name) = self.short {
             if short_name.len() != 1 {
                 let e = format!("invalid short name: \"{}\"", short_name);
-                return Err(SanityCheckError::new(e));
+                return Err(SanityCheckError{e});
             }
         }
         if let Some(ref aliases) = self.aliases {
             for alias in aliases {
                 if alias.find(' ').is_some() {
                     let e = format!("invalid argument alias: \"{}\"", alias);
-                    return Err(SanityCheckError::new(e));
+                    return Err(SanityCheckError{e});
                 }
             }
         }
@@ -253,22 +248,22 @@ impl PItem {
     fn sanity_check(&self) -> Result<(), SanityCheckError> {
         let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
         if !identifier_re.is_match(&self.c_var) {
-            return Err(SanityCheckError::new(format!("invalid c variable \"{}\"", self.c_var)));
+            return Err(SanityCheckError{e: format!("invalid c variable \"{}\"", self.c_var)});
         }
         let valid_type = (&PERMITTED_C_TYPES)
             .into_iter()
             .any(|&tp| tp == self.c_type);
         if !valid_type {
-            return Err(SanityCheckError::new(format!("invalid c type: \"{}\"", self.c_type)));
+            return Err(SanityCheckError{e: format!("invalid c type: \"{}\"", self.c_type)});
         }
         if self.default.is_some() && !self.optional.unwrap_or(false) {
             let e = String::from("cannot set default value for non-optional positional argument");
-            return Err(SanityCheckError::new(e));
+            return Err(SanityCheckError{e});
         }
         if self.multi.unwrap_or(false) && self.c_type != "char*" {
             let e = String::from("multi-valued argument must be of type char* \
                                  (though they will be stored in char**)");
-            return Err(SanityCheckError::new(e));
+            return Err(SanityCheckError{e});
         }
         Ok(())
     }
@@ -298,12 +293,12 @@ impl Spec {
             if saw_positional_optional && !o {
                 let e = String::from("non-optional positional argument \
                                      cannot come after an optional one");
-                return Err(SanityCheckError::new(e));
+                return Err(SanityCheckError{e});
             }
             if pi.multi.unwrap_or(false) && i != self.positional.len() - 1 {
                 let e = String::from("only that last positional argument \
                                      can take multiple values");
-                return Err(SanityCheckError::new(e));
+                return Err(SanityCheckError{e});
             }
             if o {
                 saw_positional_optional = true
