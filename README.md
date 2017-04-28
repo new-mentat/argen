@@ -46,10 +46,14 @@ $ cp target/release/argen /usr/local/bin/argen
 
 ## Usage
 
-To generate a C entry point, run
-`some_command specs.toml`
+```sh
+# write to main.c
+$ argen -o main.c spec.toml
+# write to stdout
+$ argen spec.toml
+```
 
-The spec.toml file specifies how you want your C code to parse arguments.
+The `spec.toml` file specifies how you want your C code to parse arguments:
 
 ```toml
 # argen spec
