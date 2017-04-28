@@ -46,50 +46,57 @@ $ cp target/release/argen /usr/local/bin/argen
 
 ## Usage 
 
-A simple command line interface you want to build might resemble this: 
+To generate a C entry point, run 
+`some_command specs.toml`
 
-`./a.out --arg1 1 --arg2 c --quiet "positional_arg" "another_positional_arg`
+The spec.toml file specifies how you want your C code to parse arguments. 
 
-To generate the corresponding C code to parse this interface you must create a TOML file which
-describes how your CLI works.
+```toml 
+# this is an example spec.toml which argen uses 
+# to generate C argument parsing code.
+# example usage: ./generated_program --set-flag --block-size 10 file1.txt file2.txt 
 
-The corresponding TOML file to generate the C code to implement the above CLI is this 
+# Corresponds to --set-flag argument
+[[non_positional]]
+c_var = "flag_set"                  # required, variable name in C codeb
+c_type = "int"                      # required, variable type in C 
+flag = true                         # optional, no values are passed into this argument
+help_name = "flag option"           # required, display name on the -help output
+help_descr = "Set true or false"    # required, description on the -help output
 
+
+# Corresponds to --block-size argument and its value, 10.
+[[non_positional]] 
+c_var = "block_size" 
+c_type = "int"
+long = "block-size"                 # required, specifies argument name
+short = "b"                         # optional, shortcut for argument name, 1 ASCII character only
+aliases = ["bs"]                    # optional, more aliases for argument name
+default = "12"                      # optional, default value for variable 
+help_name = "block size"
+help_descr = "Set the block size"
+
+
+# Corresponds to first positional argument, input_file
+[[positional]]
+c_var  = "input_file"
+c_type = "char*"
+required = "true"                   # optional, defaults to false. Produces error if input_file is not passed
+help_name = "input file"
+help_descr = "input file, required"
+
+
+# Corresponds to the second positional argument, output_file 
+[[positional]]
+c_var = "output_file"
+c_type = "char*"
+help_name = "output file"
+help_descr = "file for output"
+default = "output.txt"
 ```
-Inline spec
-Include Comment Descriptions 
-```
 
-Now, we can generate the C code using this TOML file and argen.
+After generating and compiling the C code, you should have a fully
+functioning C argument parsing code.
 
-```sh
-argen -o main.c spec.toml
-```
-
-Check out the generated code. You'll notice that all the C variables
-corresponding to the value of our command line arguments 
-are declared according to the name and type in the TOML file. After the call to `method_name`,
-all your variables are properly initialized and ready to be used however
-you want. 
-
-When you compile the C code and run the executable, you'll notice the help and usage dialogues 
-displayed in the command line.
-
-In other words, you've built a fully functioning CLI with 0 programming logic!
-
-Argen also supports features which allow you to create much more complex  
-CLIs. 
-
-Imagine if you wanted to create a CLI like this: 
-`/executable --set-flag --def-arg "input_file" --required-arg 2 --optional-arg "maybe" opt_p_arg req_p_arg` 
-
-Here, we have multiple different argument types which we want to pass into the program. 
-An arg type like `--set-flag` requires no value and serves as a flag. Arguments  
-like `--def-arg` should default to some value if not specified. 
-Other arguments like `--required-arg` are required and will error if no values are passed in. 
-
-Writing the code for this is boring and tedious. Using argen, you
-can create this by simply specifying more options in the TOML file. 
-
-Feel free to check out out this [example TOML file](examples/example_spec.toml) which details all the configuration
-options available, or some [fully functioning examples](/examples/).
+Feel free to check out out this [example TOML file](examples/api.toml) which details all the configuration
+options available, or some other [TOML configuration examples](/examples/).
