@@ -68,9 +68,9 @@ struct PItem {
 struct NPItem {
     c_var: String,
     c_type: String,
+    long: String,
     help_name: Option<String>,
     help_descr: Option<String>,
-    long: String,
     aliases: Option<Vec<String>>,
     short: Option<String>,
     required: Option<bool>,
