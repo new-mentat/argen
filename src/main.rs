@@ -90,6 +90,6 @@ mod tests {
 
     #[test]
     fn it_works() {
-        codegen(String::from("specs.toml"), None)
+        codegen(String::from("examples/example_spec.toml"), None)
     }
 }
