@@ -242,7 +242,7 @@ impl PItem {
         code.push_str(&format!("\tif (!{}__isset) {{\n", self.c_var));
         if let Some(ref default) = self.default {
             if self.multi.unwrap_or(false) {
-                code.push_str(&format!("\t\t*{} = &\"{}\\0\";\n\t\t*{}__size = 1\n",
+                code.push_str(&format!("\t\t*{} = &\"{}\\0\";\n\t\t*{}__size = 1;\n",
                                        self.c_var,
                                        c_quote(default),
                                        self.c_var))
