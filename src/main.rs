@@ -32,6 +32,8 @@ use std::path::Path;
 use std::process;
 
 
+const VERSION: &str = "0.1.0";
+
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} [options] FILE", program);
     print!("{}", opts.usage(&brief));
@@ -65,12 +67,17 @@ fn main() {
     let mut opts = Options::new();
     opts.optopt("o", "", "set output file name", "NAME");
     opts.optflag("h", "help", "print this help menu");
+    opts.optflag("v", "version", "show version");
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(f) => panic!(f.to_string()),
     };
     if matches.opt_present("h") {
         print_usage(&program, opts);
+        return;
+    }
+    if matches.opt_present("v") {
+        println!("argen {}", VERSION);
         return;
     }
     let output = matches.opt_str("o");

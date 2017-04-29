@@ -85,7 +85,7 @@ aliases = ["size"]                 # optional, aliases for option
 default = "12"                     # optional, default value for variable
                                    #   for int:   assigned as literal
                                    #   for char*: assigned as quoted literal
-#required = false                  # optional, makes the argument mandatory
+#required = false                  # optional, makes the option mandatory
                                    #   if set, cannot also provide default
                                    #   (defaults to false)
 
@@ -94,8 +94,9 @@ c_var = "flag_set"
 c_type = "int"
 long = "set-flag"
 help_descr = "Enable something"
-flag = true                      # optional, no values are passed into this argument
-                                 #   c_type must be int, set to 1 if flag is given
+flag = true                      # optional, make the option take no argument
+                                 #   c_type must be int
+                                 #   c_var is 1 if flag is set, 0 otherwise
                                  #   flags cannot also be required
 
 
