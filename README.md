@@ -28,7 +28,9 @@ int main(int argc, char **argv) {
 
 #### Standalone
 
-We have not yet released precompiled binaries for **`argen`**.
+**`argen`** can easily be installed as a pre-built executable. Download from
+the latest [compiled binaries](https://github.com/kynelee/argen/releases)
+and run `./install`.
 
 #### Source
 
