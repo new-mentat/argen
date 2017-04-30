@@ -32,14 +32,14 @@ use std::path::Path;
 use std::process;
 
 
-const VERSION: &str = "0.1.0";
+const VERSION: &str = "1.0.0";
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} [options] FILE", program);
     print!("{}", opts.usage(&brief));
 }
 
-pub fn codegen(filename: String, output: Option<String>) {
+fn codegen(filename: String, output: Option<String>) {
     let path = Path::new(&filename);
     let mut f = File::open(&path).expect("open input toml");
     let mut contents = String::new();

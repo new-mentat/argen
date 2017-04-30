@@ -18,12 +18,12 @@ extern crate regex;
 extern crate toml;
 
 use std::collections::HashSet;
-use std::error;
+use std::convert::From;
+use std::error::Error;
 use std::fmt;
 use std::io::Write;
 use regex::Regex;
 
-static PERMITTED_C_TYPES: [&str; 2] = ["char*", "int"];
 static INCLUDES: [&str; 4] = ["stdlib", "stdio", "string", "getopt"];
 
 /// c_quote takes a string and quotes it suitably for use in a char* literal in C.
@@ -41,33 +41,58 @@ impl fmt::Display for SanityCheckError {
         write!(f, "{}", self.e)
     }
 }
-impl error::Error for SanityCheckError {
+impl Error for SanityCheckError {
     fn description(&self) -> &str {
         &self.e
     }
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&Error> {
         None
     }
 }
+impl From<toml::de::Error> for SanityCheckError {
+    fn from(err: toml::de::Error) -> SanityCheckError {
+        let e = String::from(err.description());
+        SanityCheckError { e }
+    }
+}
 
+#[derive(Deserialize)]
+enum CType {
+    #[serde(rename = "char*")]
+    Chars,
+    #[serde(rename = "int")]
+    Int,
+}
+impl CType {
+    fn as_str(&self) -> &'static str {
+        match *self {
+            CType::Chars => "char*",
+            CType::Int => "int",
+        }
+    }
+}
+impl fmt::Display for CType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
 
 #[derive(Deserialize)]
 struct PItem {
     c_var: String,
-    c_type: String,
+    c_type: CType,
     help_name: String,
     help_descr: Option<String>,
     required: Option<bool>,
     default: Option<String>,
-    multi: Option<bool>,
     //multi: c_var will be c_type*, and c_var__size will be size_t. default occupies first entry.
-    //TODO: multi non-required doesn't compile correctly.
+    multi: Option<bool>,
 }
 
 #[derive(Deserialize)]
 struct NPItem {
     c_var: String,
-    c_type: String,
+    c_type: CType,
     long: String,
     help_name: Option<String>,
     help_descr: Option<String>,
@@ -79,35 +104,54 @@ struct NPItem {
 }
 
 impl NPItem {
-    /// declarations for the main function.
+    /// A suitable string to go into the parse_args declaration. Starts with ',' if anything.
+    fn as_arg(&self) -> String {
+        format!(", {} *{}", self.c_type, self.c_var)
+    }
+    /// A suitable string to go into the parse_args function call. Starts with ',' if anything.
+    fn as_param(&self) -> String {
+        format!(", &{}", self.c_var)
+    }
+    /// Declarations for the main function.
     fn decl_main(&self) -> String {
         format!("\t{} {};\n", self.c_type, self.c_var)
     }
-    /// declarations for the parse_args (not main) function.
-    fn decl_parse(&self) -> String {
-        match self.flag.unwrap_or(false) {
-            true => String::new(),
-            false => format!("\tint {}__isset = 0;\n", self.c_var),
+    /// Declaration of __isset variables for the parse_args (not main) function.
+    fn decl_isset(&self) -> String {
+        if self.flag.unwrap_or(false) {
+            String::new()
+        } else {
+            format!("\tint {}__isset = 0;\n", self.c_var)
         }
     }
-    /// assigns value to the c_var in parse loop.
+    /// Definition of __default variables for the parse_args (not main) function.
+    fn def_default(&self) -> String {
+        if self.flag.unwrap_or(false) || self.default.is_none() {
+            return String::new();
+        }
+        let default = self.default.as_ref().unwrap();
+        let quoted = format!("\"{}\\0\"", c_quote(default));
+        let default = match self.c_type {
+            CType::Chars => &quoted,
+            CType::Int => default,
+        };
+        format!("\tstatic {} {}__default = {};\n",
+                self.c_type,
+                self.c_var,
+                default)
+    }
+    /// Assigns value to the c_var in parse loop.
     fn assign(&self) -> String {
-        let mut code = String::new();
-        match &*self.c_type {
-            "int" => match self.flag.unwrap_or(false) {
-                true  => return format!("\t\t\t*{} = 1;\n", self.c_var),
-                false => code.push_str(&format!("\t\t\t*{} = atoi(optarg);\n", self.c_var)),
-            },
-            "char*" => code.push_str(&format!("\t\t\t*{} = optarg;\n", self.c_var)),
-            _ => ()/* impossible (due to sanity check) */,
+        if self.flag.unwrap_or(false) {
+            return format!("\t\t\t*{} = 1;\n", self.c_var);
         }
-        match self.flag.unwrap_or(false) {
-            false => code.push_str(&format!("\t\t\t{}__isset = 1;\n", self.c_var)),
-            _ => (),
+        let set_isset = format!("\t\t\t{}__isset = 1;\n", self.c_var);
+        match self.c_type {
+            CType::Chars => format!("\t\t\t*{} = optarg;\n{}", self.c_var, set_isset),
+            CType::Int => format!("\t\t\t*{} = atoi(optarg);\n{}", self.c_var, set_isset),
         }
-        code
     }
-    /// long option as per getopt_long(3).
+    /// Long option as per getopt_long(3).
     fn long_option(&self, uniq: u8) -> String {
         format!("\t\t{{\"{}\", {}, 0, {}}},\n",
                 self.long,
@@ -117,44 +161,29 @@ impl NPItem {
                 },
                 uniq)
     }
-    /// performs checks and conditional assignments after the parse loop.
+    /// Performs checks and conditional assignments after the parse loop.
     fn post_loop(&self) -> String {
-        let mut code = String::new();
-        code.push_str(&format!("\tif (!{}__isset) {{\n", self.c_var));
         if self.required.unwrap_or(false) {
-            code.push_str("\t\tusage(argv[0]);\n");
-            code.push_str("\t\texit(1);\n");
-        } else if let Some(ref default) = self.default {
-            match &*self.c_type {
-                "int"   => code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default)),
-                "char*" => code.push_str(&format!("\t\t*{} = \"{}\";\n",
-                                                  self.c_var,
-                                                  c_quote(default))),
-                _ => ()/* impossible */,
-            }
+            format!("\tif (!{}__isset) {{\n\t\tusage(argv[0]);\n\t\texit(1);\n\t}}\n",
+                    self.c_var)
+        } else if self.default.is_none() {
+            String::new()
         } else {
-            return String::new();
+            format!("\tif (!{}__isset) {{\n\t\t*{0} = {0}__default;\n\t}}\n",
+                    self.c_var)
         }
-        code.push_str("\t}\n");
-        code
     }
-    /// assertion failure when self is invalid.
+    /// Assertion failure when self is invalid.
     fn sanity_check(&self) -> Result<(), SanityCheckError> {
         let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
         if !identifier_re.is_match(&self.c_var) {
             return Err(SanityCheckError { e: format!("invalid c variable \"{}\"", self.c_var) });
         }
-        let valid_type = (&PERMITTED_C_TYPES)
-            .into_iter()
-            .any(|&tp| tp == self.c_type);
-        if !valid_type {
-            return Err(SanityCheckError { e: format!("invalid c type: \"{}\"", self.c_type) });
-        }
         if self.long.find(' ').is_some() {
             return Err(SanityCheckError { e: format!("invalid argument long: \"{}\"", self.long) });
         }
         if self.flag.unwrap_or(false) {
-            if self.c_type != "int" {
+            if let CType::Chars = self.c_type {
                 let e = String::from("options that are flags must be of c_type int");
                 return Err(SanityCheckError { e });
             }
@@ -187,100 +216,108 @@ impl NPItem {
 
 
 impl PItem {
-    /// declarations for the main function.
-    fn decl_main(&self) -> String {
-        match self.multi.unwrap_or(false) {
-            true => {
-                format!("\t{} *{};\n\tsize_t {}__size;\n",
-                        self.c_type,
-                        self.c_var,
-                        self.c_var)
-            }
-            false => format!("\t{} {};\n", self.c_type, self.c_var),
+    /// A suitable string to go into the parse_args declaration. Starts with ',' if anything.
+    fn as_arg(&self) -> String {
+        if self.multi.unwrap_or(false) {
+            format!(", {} **{}, size_t *{1}__size", self.c_type, self.c_var)
+        } else {
+            format!(", {} *{}", self.c_type, self.c_var)
         }
     }
-    /// declarations for the parse function.
-    fn decl_parse(&self) -> String {
-        if !self.required.unwrap_or(false) && self.default.is_some() {
+    /// A suitable string to go into the parse_args function call. Starts with ',' if anything.
+    fn as_param(&self) -> String {
+        if self.multi.unwrap_or(false) {
+            format!(", &{}, &{0}__size", self.c_var)
+        } else {
+            format!(", &{}", self.c_var)
+        }
+    }
+    /// Declarations for the main function.
+    fn decl_main(&self) -> String {
+        if self.multi.unwrap_or(false) {
+            format!("\t{} *{};\n\tsize_t {1}__size;\n", self.c_type, self.c_var)
+        } else {
+            format!("\t{} {};\n", self.c_type, self.c_var)
+        }
+    }
+    /// Declaration of __isset variables for the parse_args (not main) function.
+    fn decl_isset(&self) -> String {
+        if self.required.unwrap_or(false) || self.default.is_none() {
+            String::new()
+        } else {
             format!("\tint {}__isset = 0;\n", self.c_var)
+        }
+    }
+    /// Definition of __default variables for the parse_args (not main) function.
+    fn def_default(&self) -> String {
+        if !self.required.unwrap_or(false) && self.default.is_some() {
+            let default = self.default.as_ref().unwrap();
+            let quoted = format!("\"{}\\0\"", c_quote(default));
+            let default = match self.c_type {
+                CType::Chars => &quoted,
+                CType::Int => default,
+            };
+            format!("\tstatic {} {}__default = {};\n",
+                    self.c_type,
+                    self.c_var,
+                    default)
         } else {
             String::new()
         }
     }
-    /// assigns value to c_var using argv[0].
+    /// Assigns value to c_var using argv[0].
     fn assign(&self) -> String {
-        let mut code = String::new();
         let tabbing = if self.required.unwrap_or(false) {
             "\t"
         } else {
             "\t\t"
         };
-        if self.multi.unwrap_or(false) {
-            code.push_str(&format!("{}*{} = argv;\n{}*{}__size = argc;\n",
-                                   tabbing,
-                                   self.c_var,
-                                   tabbing,
-                                   self.c_var));
+        let set_isset = if !self.required.unwrap_or(false) && self.default.is_some() {
+            format!("\t\t{}__isset = 1;\n", self.c_var)
         } else {
-            match &*self.c_type {
-                "int"   => code.push_str(&format!("{}*{} = atoi(argv[0]);\n", tabbing, self.c_var)),
-                "char*" => code.push_str(&format!("{}*{} = argv[0];\n", tabbing, self.c_var)),
-                _ => ()/* impossible (due to sanity check) */,
+            String::new()
+        };
+        if self.multi.unwrap_or(false) {
+            format!("{}*{} = argv;\n{0}*{1}__size = argc;\n{}",
+                    tabbing,
+                    self.c_var,
+                    set_isset)
+        } else {
+            match self.c_type {
+                CType::Chars => format!("{}*{} = argv[0];\n", tabbing, self.c_var),
+                CType::Int => format!("{}*{} = atoi(argv[0]);\n", tabbing, self.c_var),
             }
         }
-        match !self.required.unwrap_or(false) && self.default.is_some() {
-            true => code.push_str(&format!("\t\t{}__isset = 1;\n", self.c_var)),
-            _ => (),
-        }
-        code
     }
     fn post_loop(&self) -> String {
-        if self.required.unwrap_or(false) {
+        if self.required.unwrap_or(false) || self.default.is_none() {
             return String::new();
         }
-        let mut code = String::new();
-        code.push_str(&format!("\tif (!{}__isset) {{\n", self.c_var));
-        if let Some(ref default) = self.default {
-            if self.multi.unwrap_or(false) {
-                code.push_str(&format!("\t\t*{} = &\"{}\\0\";\n\t\t*{}__size = 1;\n",
-                                       self.c_var,
-                                       c_quote(default),
-                                       self.c_var))
-            } else {
-                match &*self.c_type {
-                    "int"   => code.push_str(&format!("\t\t*{} = {};\n", self.c_var, default)),
-                    "char*" => code.push_str(&format!("\t\t*{} = \"{}\\0\";\n",
-                                                      self.c_var,
-                                                      c_quote(default))),
-                    _ => ()/* impossible */,
-                }
-            }
+        let if_blk = format!("\tif (!{}__isset) {{\n", self.c_var);
+        if self.multi.unwrap_or(false) {
+            format!("{}\t\t*{} = &{1}__default;\n\t\t*{1}__size = 1;\n\t}}\n",
+                    if_blk,
+                    self.c_var)
         } else {
-            return String::new();
+            format!("{}\t\t*{} = {1}__default;\n\t}}\n", if_blk, self.c_var)
         }
-        code.push_str("\t}\n");
-        code
     }
-    /// assertion failure when self is invalid.
+    /// Assertion failure when self is invalid.
     fn sanity_check(&self) -> Result<(), SanityCheckError> {
         let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
         if !identifier_re.is_match(&self.c_var) {
             return Err(SanityCheckError { e: format!("invalid c variable \"{}\"", self.c_var) });
         }
-        let valid_type = (&PERMITTED_C_TYPES)
-            .into_iter()
-            .any(|&tp| tp == self.c_type);
-        if !valid_type {
-            return Err(SanityCheckError { e: format!("invalid c type: \"{}\"", self.c_type) });
-        }
         if self.required.unwrap_or(false) && self.default.is_some() {
             let e = String::from("cannot set default value for required positional argument");
             return Err(SanityCheckError { e });
         }
-        if self.multi.unwrap_or(false) && self.c_type != "char*" {
-            let e = String::from("multi-valued argument must be of type char* \
-                                 (though they will be stored in char**)");
-            return Err(SanityCheckError { e });
+        if self.multi.unwrap_or(false) {
+            if let CType::Int = self.c_type {
+                let e = String::from("multi-valued argument must be of type char* \
+                                     (though they will be stored in char**)");
+                return Err(SanityCheckError { e });
+            }
         }
         Ok(())
     }
@@ -288,19 +325,21 @@ impl PItem {
 
 #[derive(Deserialize)]
 pub struct Spec {
-    /// positional must be ordered: required, then optional. only last can be multi.
+    /// Positional must be ordered: required, then optional.
+    /// Only the last PItem can be multi.
     positional: Vec<PItem>,
+    /// Non-positional is unordered.
     non_positional: Vec<NPItem>,
 }
 
 impl Spec {
-    /// deserializes toml from a reader into a Spec.
+    /// Deserializes toml from a string into a Spec.
     pub fn from_str(toml: &str) -> Result<Spec, SanityCheckError> {
-        let s: Spec = toml::from_str(toml).expect("parse toml argument spec");
+        let s: Spec = toml::from_str(toml)?;
         s.sanity_check()?;
         Ok(s)
     }
-    /// check all items in the spec to make sure they are valid.
+    /// Check all items in the spec to make sure they are valid.
     fn sanity_check(&self) -> Result<(), SanityCheckError> {
         let mut saw_optional = false;
         for i in 0..self.positional.len() {
@@ -352,19 +391,22 @@ impl Spec {
             pos.push_str(&(0..noptional).map(|_| ']').collect::<String>());
             pos
         };
+        let indent = "\t       \"  ";
         let mut help = String::new();
         help.push_str(&self.positional
                            .iter()
                            .map(|ref pi| if let Some(ref d) = pi.help_descr {
-                                    format!("\t       \"  {}\\n\"\n\t       \"        {}\\n\"\n",
+                                    format!("{}{}\\n\"\n{0}      {}\\n\"\n",
+                                            indent,
                                             pi.help_name,
                                             &c_quote(&d))
                                 } else {
-                                    format!("\t       \"  {}\\n\"\n", pi.help_name)
+                                    format!("{}{}\\n\"\n", indent, pi.help_name)
                                 })
                            .collect::<String>());
-        help.push_str("\t       \"  -h  --help\\n\"\n\
-                      \t       \"        print this usage and exit\\n\"\n");
+        help.push_str(&format!("{}-h  --help\\n\"\n\
+                               {0}      print this usage and exit\\n\"\n",
+                               indent));
         help.push_str(&self.non_positional
                            .iter()
                            .map(|ref npi| {
@@ -394,9 +436,9 @@ impl Spec {
                 _ => String::new(),
             };
             if let Some(ref short) = npi.short {
-                format!("\t       \"  -{}{}{}\\n\"\n", short, long, descr)
+                format!("{}-{}{}{}\\n\"\n", indent, short, long, descr)
             } else {
-                format!("\t       \"    {}{}\\n\"\n", long, descr)
+                format!("{}  {}{}\\n\"\n", indent, long, descr)
             }
         })
                            .collect::<String>());
@@ -410,24 +452,27 @@ impl Spec {
     fn c_parse_args(&self) -> String {
         let mut body = String::new();
         body.push_str("void parse_args(int argc, char **argv");
-        for pi in &self.positional {
-            if pi.multi.unwrap_or(false) {
-                body.push_str(&format!(", {} **{}, size_t *{}__size",
-                                       pi.c_type,
-                                       pi.c_var,
-                                       pi.c_var))
-            } else {
-                body.push_str(&format!(", {} *{}", pi.c_type, pi.c_var));
-            }
-        }
         for npi in &self.non_positional {
-            body.push_str(&format!(", {} *{}", npi.c_type, npi.c_var))
+            body.push_str(&npi.as_arg())
+        }
+        for pi in &self.positional {
+            body.push_str(&pi.as_arg())
         }
         body.push_str(") {\n");
 
-        // decls, optional
+        // decls for __isset
         for npi in &self.non_positional {
-            body.push_str(&npi.decl_parse());
+            body.push_str(&npi.decl_isset());
+        }
+        for pi in &self.positional {
+            body.push_str(&pi.decl_isset());
+        }
+        // defs for __default
+        for npi in &self.non_positional {
+            body.push_str(&npi.def_default());
+        }
+        for pi in &self.positional {
+            body.push_str(&pi.def_default());
         }
 
         // longopts
@@ -453,8 +498,8 @@ impl Spec {
             let npi = &self.non_positional[i];
             body.push_str(&npi.long_option(uniqs[i]));
         }
-        body.push_str("\t\t{\"help\", 0, 0, 'h'},\n");
-        body.push_str("\t\t{0, 0, 0, 0}\n\t};\n");
+        body.push_str("\t\t{\"help\", 0, 0, 'h'},\n\
+                      \t\t{0, 0, 0, 0}\n\t};\n");
 
         // shortopts
         let mut optstring = String::from_utf8(self.non_positional
@@ -474,9 +519,10 @@ impl Spec {
         optstring.push('h');
 
         // parse loop, optional
-        body.push_str("\tint ch;\n\twhile ((ch = getopt_long(argc, argv, ");
-        body.push_str(&format!("\"{}\", longopts, NULL)) != -1) {{\n", optstring));
-        body.push_str("\t\tswitch (ch) {\n");
+        body.push_str(&format!("\tint ch;\n\
+            \twhile ((ch = getopt_long(argc, argv, \"{}\", longopts, NULL)) != -1) {{\n\
+            \t\tswitch (ch) {{\n",
+                               optstring));
         for i in 0..uniqs.len() {
             body.push_str(&format!("\t\tcase {}:\n{}\t\t\tbreak;\n",
                                    uniqs[i],
@@ -507,14 +553,13 @@ impl Spec {
             } else {
                 0
             };
-        for pi in &required {
-            body.push_str(&pi.decl_parse());
-        }
 
         // parse loop, positional
-        body.push_str(&format!("\n\tif (argc-optind < {}) {{\n", nrequired));
-        body.push_str("\t\tusage(argv[0]);\n\t\texit(1);\n\t}\n");
-        body.push_str("\targv += optind;\n\targc -= optind;\n\n");
+        body.push_str(&format!("\n\tif (argc-optind < {}) {{\n\
+                               \t\tusage(argv[0]);\n\t\texit(1);\n\
+                               \t}}\n\
+                               \targv += optind;\n\targc -= optind;\n\n",
+                               nrequired));
         for pi in &required {
             body.push_str(&format!("{}\targv++;\n", pi.assign()));
         }
@@ -530,9 +575,6 @@ impl Spec {
             .iter()
             .filter(|p| !p.required.unwrap_or(false) && !p.multi.unwrap_or(false))
             .collect();
-        for pi in &optional {
-            body.push_str(&pi.decl_parse());
-        }
 
         // parse loop, positional optional
         for pi in &optional {
@@ -550,7 +592,6 @@ impl Spec {
             .iter()
             .find(|p| p.multi.unwrap_or(false));
         if let Some(pi) = multi {
-            body.push_str(&pi.decl_parse());
             if pi.required.unwrap_or(false) {
                 body.push_str(&pi.assign());
             } else {
@@ -569,27 +610,23 @@ impl Spec {
         let mut main = String::new();
         main.push_str("int main(int argc, char **argv) {\n");
 
-        for pi in &self.positional {
-            main.push_str(&pi.decl_main())
-        }
         for npi in &self.non_positional {
             main.push_str(&npi.decl_main())
         }
+        for pi in &self.positional {
+            main.push_str(&pi.decl_main())
+        }
 
         main.push_str("\n\tparse_args(argc, argv");
-        for pi in &self.positional {
-            main.push_str(&format!(", &{}", pi.c_var));
-            if pi.multi.unwrap_or(false) {
-                main.push_str(&format!(", &{}__size", pi.c_var))
-            }
-        }
         for npi in &self.non_positional {
-            main.push_str(&format!(", &{}", npi.c_var))
+            main.push_str(&npi.as_param())
         }
-        main.push_str(");\n\n");
-
-        main.push_str("\t/* call your code here */\n");
-        main.push_str("}\n");
+        for pi in &self.positional {
+            main.push_str(&pi.as_param())
+        }
+        main.push_str(");\n\n\
+                      \t/* call your code here */\n\
+                      \treturn 0;\n}\n");
         main
     }
     /// generates everything
