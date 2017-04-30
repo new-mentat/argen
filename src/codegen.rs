@@ -173,7 +173,7 @@ impl NPItem {
                     self.c_var)
         }
     }
-    /// Assertion failure when self is invalid.
+    /// Error if self is invalid.
     fn sanity_check(&self) -> Result<(), SanityCheckError> {
         let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
         if !identifier_re.is_match(&self.c_var) {
@@ -289,6 +289,7 @@ impl PItem {
             }
         }
     }
+    /// Performs checks and conditional assignments after the parse loop.
     fn post_loop(&self) -> String {
         if self.required.unwrap_or(false) || self.default.is_none() {
             return String::new();
@@ -302,7 +303,7 @@ impl PItem {
             format!("{}\t\t*{} = {1}__default;\n\t}}\n", if_blk, self.c_var)
         }
     }
-    /// Assertion failure when self is invalid.
+    /// Error if self is invalid.
     fn sanity_check(&self) -> Result<(), SanityCheckError> {
         let identifier_re = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
         if !identifier_re.is_match(&self.c_var) {
@@ -365,14 +366,14 @@ impl Spec {
         }
         Ok(())
     }
-    /// creates the necessary headers in C.
+    /// Creates the necessary headers in C.
     fn c_headers(&self) -> String {
         INCLUDES
             .iter()
             .map(|s| format!("#include<{}.h>\n", s))
             .collect()
     }
-    /// creates the usage function in C.
+    /// Creates the usage function in C.
     fn c_usage(&self) -> String {
         let positional_usage = {
             let mut pos = String::new();
@@ -448,7 +449,7 @@ impl Spec {
                 positional_usage,
                 help)
     }
-    /// creates the parse_args function in C.
+    /// Creates the parse_args function in C.
     fn c_parse_args(&self) -> String {
         let mut body = String::new();
         body.push_str("void parse_args(int argc, char **argv");
@@ -605,7 +606,7 @@ impl Spec {
         body.push_str("}\n");
         body
     }
-    /// creates the main function in C.
+    /// Creates the main function in C.
     fn c_main(&self) -> String {
         let mut main = String::new();
         main.push_str("int main(int argc, char **argv) {\n");
@@ -629,7 +630,7 @@ impl Spec {
                       \treturn 0;\n}\n");
         main
     }
-    /// generates everything
+    /// Generates everything
     pub fn gen(&self) -> String {
         let h = self.c_headers();
         let usage = self.c_usage();
@@ -637,7 +638,7 @@ impl Spec {
         let main = self.c_main();
         format!("{}\n\n{}\n{}\n{}", h, usage, body, main)
     }
-    /// writes generate C code to a writer.
+    /// Writes generate C code to a writer.
     pub fn writeout<W>(&self, wrt: &mut W)
         where W: Write
     {
