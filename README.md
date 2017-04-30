@@ -9,18 +9,19 @@ config. No more having to write that tedious arg-parsing C code!
 // this is what the entry point looks like from the above example
 
 int main(int argc, char **argv) {
-	char* out_file;
-	char* in_file;
-	char* *words;
-	size_t words__size;
 	int block_size;
 	int fave_number;
 	int quiet;
 	char* username;
+	char* out_file;
+	char* in_file;
+	char* *words;
+	size_t words__size;
 
-	parse_args(argc, argv, &out_file, &in_file, &words, &words__size, &block_size, &fave_number, &quiet, &username);
+	parse_args(argc, argv, &block_size, &fave_number, &quiet, &username, &out_file, &in_file, &words, &words__size);
 
 	/* call your code here */
+	return 0;
 }
 ```
 
