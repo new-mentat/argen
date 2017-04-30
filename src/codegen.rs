@@ -477,7 +477,9 @@ impl Spec {
         }
 
         // longopts
+        // unique chars for each longopt
         let mut all_bytes: HashSet<u8> = (2..255).collect();
+        // remove chars that are used for small opts
         for npi in &self.non_positional {
             if let Some(ref s) = npi.short {
                 all_bytes.remove(&s.as_bytes()[0]);
@@ -539,7 +541,7 @@ impl Spec {
             body.push_str(&npi.post_loop());
         }
 
-        // decls, positional
+        // parse+post loop, positional
         let required: Vec<&PItem> = self.positional
             .iter()
             .filter(|p| p.required.unwrap_or(false) && !p.multi.unwrap_or(false))
@@ -554,41 +556,42 @@ impl Spec {
             } else {
                 0
             };
-
-        // parse loop, positional
-        body.push_str(&format!("\n\tif (argc-optind < {}) {{\n\
-                               \t\tusage(argv[0]);\n\t\texit(1);\n\
-                               \t}}\n\
-                               \targv += optind;\n\targc -= optind;\n\n",
-                               nrequired));
-        for pi in &required {
-            body.push_str(&format!("{}\targv++;\n", pi.assign()));
+        if nrequired > 0 {
+            body.push_str(&format!("\n\tif (argc-optind < {}) {{\n\
+                                   \t\tusage(argv[0]);\n\t\texit(1);\n\
+                                   \t}}\n\
+                                   \targv += optind;\n\targc -= optind;\n\n",
+                                   nrequired));
+            if !required.is_empty() {
+                for pi in &required {
+                    body.push_str(&format!("{}\targv++;\n", pi.assign()));
+                }
+                if required.len() == 1 {
+                    body.push_str("\targc--;\n\n");
+                } else {
+                    body.push_str(&format!("\targc -= {};\n\n", required.len()));
+                }
+                for pi in &required {
+                    body.push_str(&pi.post_loop());
+                }
+            }
         }
-        body.push_str(&format!("\targc -= {};\n\n", required.len()));
 
-        // post loop, positional
-        for pi in &required {
-            body.push_str(&pi.post_loop());
-        }
-
-        // decls, positional optional
+        // parse+post loop, positional optional
         let optional: Vec<&PItem> = self.positional
             .iter()
             .filter(|p| !p.required.unwrap_or(false) && !p.multi.unwrap_or(false))
             .collect();
-
-        // parse loop, positional optional
         for pi in &optional {
             body.push_str("\tif (argc > 0) {\n");
             body.push_str(&pi.assign());
             body.push_str("\t\targv++; argc--;\n\t}\n");
         }
-
-        // post loop, positional optional
         for pi in &optional {
             body.push_str(&pi.post_loop());
         }
 
+        // multi item
         let multi: Option<&PItem> = self.positional
             .iter()
             .find(|p| p.multi.unwrap_or(false));

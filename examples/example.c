@@ -85,7 +85,7 @@ void parse_args(int argc, char **argv, int *block_size, int *fave_number, int *q
 
 	*out_file = argv[0];
 	argv++;
-	argc -= 1;
+	argc--;
 
 	if (argc > 0) {
 		*in_file = argv[0];
