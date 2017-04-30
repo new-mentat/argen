@@ -26,13 +26,13 @@ int main(int argc, char **argv) {
 
 ## Installation
 
-#### Standalone
+### Standalone
 
 **`argen`** can easily be installed as a pre-built executable. Download from
 the latest [compiled binaries](https://github.com/kynelee/argen/releases)
 and run `./install`.
 
-#### Source
+### Source
 
 ```sh
 # install rustup.rs
@@ -44,6 +44,13 @@ $ cd argen
 $ cargo build --release
 # copy binary
 $ cp target/release/argen /usr/local/bin/argen
+```
+
+If you intend on doing development, you will find integration testing with
+gcc easy and pretty with this line:
+
+```sh
+cargo run -- examples/example_spec.toml | tee a.c | pygmentize -l c && gcc a.c
 ```
 
 ## Usage
