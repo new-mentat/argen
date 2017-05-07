@@ -130,7 +130,7 @@ impl NPItem {
             return String::new();
         }
         let default = self.default.as_ref().unwrap();
-        let quoted = format!("\"{}\\0\"", c_quote(default));
+        let quoted = format!("\"{}\"", c_quote(default));
         let default = match self.c_type {
             CType::Chars => &quoted,
             CType::Int => default,
@@ -252,7 +252,7 @@ impl PItem {
     fn def_default(&self) -> String {
         if !self.required.unwrap_or(false) && self.default.is_some() {
             let default = self.default.as_ref().unwrap();
-            let quoted = format!("\"{}\\0\"", c_quote(default));
+            let quoted = format!("\"{}\"", c_quote(default));
             let default = match self.c_type {
                 CType::Chars => &quoted,
                 CType::Int => default,
