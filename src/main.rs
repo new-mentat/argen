@@ -67,7 +67,7 @@ fn main() {
     let mut opts = Options::new();
     opts.optopt("o", "", "set output file name", "NAME");
     opts.optflag("h", "help", "print this help menu");
-    opts.optflag("v", "version", "show version");
+    opts.optflag("v", "help", "show version");
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(f) => panic!(f.to_string()),
@@ -80,13 +80,14 @@ fn main() {
         println!("argen {}", VERSION);
         return;
     }
-    let output = matches.opt_str("o");
-    let input = if !matches.free.is_empty() {
-        matches.free[0].clone()
     } else {
         print_usage(&program, opts);
         return;
     };
+
+    let output = matches.opt_str("o");
+    let input = if !matches.free.is_empty() {
+        matches.free[0].clone()
 
     codegen(input, output)
 }
