@@ -31,12 +31,12 @@ void parse_args(int argc, char **argv, int *block_size, int *fave_number, int *q
 	int username__isset = 0;
 	static int block_size__default = 12;
 	static int fave_number__default = 0xDEADBEEF;
-	static char* username__default = "John Smith\0";
+	static char* username__default = "John Smith";
 	static struct option longopts[] = {
 		{"block-size", required_argument, 0, 98},
-		{"fav-number", required_argument, 0, 33},
+		{"fav-number", required_argument, 0, 254},
 		{"quiet", no_argument, 0, 113},
-		{"name", required_argument, 0, 68},
+		{"name", required_argument, 0, 253},
 		{"help", 0, 0, 'h'},
 		{0, 0, 0, 0}
 	};
@@ -47,14 +47,14 @@ void parse_args(int argc, char **argv, int *block_size, int *fave_number, int *q
 			*block_size = atoi(optarg);
 			block_size__isset = 1;
 			break;
-		case 33:
+		case 254:
 			*fave_number = atoi(optarg);
 			fave_number__isset = 1;
 			break;
 		case 113:
 			*quiet = 1;
 			break;
-		case 68:
+		case 253:
 			*username = optarg;
 			username__isset = 1;
 			break;

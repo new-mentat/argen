@@ -36,8 +36,7 @@ and run `./install`.
 ### Source
 
 ```sh
-# install rustup.rs
-$ curl https://sh.rustup.rs -sSf | sh
+# install rust via rustup.rs
 # clone the source code
 $ git clone https://github.com/kynelee/argen.git
 $ cd argen

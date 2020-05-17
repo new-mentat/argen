@@ -14,12 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#[macro_use]
-extern crate serde_derive;
-extern crate getopts;
-extern crate regex;
-extern crate toml;
-
 mod codegen;
 
 use codegen::Spec;
@@ -27,15 +21,14 @@ use getopts::Options;
 use std::env;
 use std::fs::File;
 use std::io;
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process;
-
 
 const VERSION: &str = "1.0.0";
 
 fn print_usage(program: &str, opts: Options) {
-    let brief = format!("Usage: {} [options] FILE", program);
+    let brief = format!("Usage: {} [options] SPEC.toml", program);
     print!("{}", opts.usage(&brief));
 }
 
